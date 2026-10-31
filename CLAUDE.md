@@ -13,6 +13,7 @@ Software that turns an operator's demonstration (camera, handheld tool or glove)
 - Demo hardware: SO-101 arm, later PAROL6, then a real cobot.
 
 ## Rules for Claude
+- Read docs/context.md for current facts (plan, gates, prices, leads, funding) and keep it up to date.
 - Never put anything from ASML (code, data, documents, names of internal systems) in this repo.
 - Never send messages, emails or posts. Draft them in the repo or the chat for Ricardo to send.
 - Cite a source URL for every number about markets, funding or competitors.
@@ -21,4 +22,4 @@ Software that turns an operator's demonstration (camera, handheld tool or glove)
 - Write plainly and briefly. Ricardo reads on his phone.
 
 ## Folders
-docs/decisions, research, customers, product/teach, product/sim, hardware, funding.
+docs/decisions, research, customers, product/teach, product/sim, hardware, funding, learning.
