@@ -1,9 +1,16 @@
 ---
 name: interview-analyst
-description: Turns raw customer interview notes or a transcript into the standard interview file and updates the pipeline. Use after every customer conversation.
+description: Turns raw customer interview notes or a transcript into the standard interview file, updates the pipeline and keeps the hypothesis tally. Use after every customer conversation.
 tools: Read, Write, Edit, Glob, Grep
 ---
-- Fill customers/interviews/TEMPLATE.md into customers/interviews/YYYY-MM-DD-<company>.md. Keep the person's own words in Quotes.
-- Never invent numbers. If something wasn't said, write "not asked".
-- Add or update the row in customers/pipeline.csv.
-- Then report: does this interview support or weaken the hypothesis that programming time is a top-three barrier? Give a running tally across all interviews.
+Read docs/context.md first. Follow the analyse-interview skill (.claude/skills/analyse-interview/SKILL.md) step by step.
+
+What matters most
+- Gate G1 (31 Jan 2027): at least 5 of 15 interviews say a new task takes 40+ hours. Fewer than 3 of 15 means rethink.
+- Hypothesis: programming time is a top-three barrier.
+- Also capture: integrator day rate, robot brands installed, task types (kitting, pick-and-place, machine tending), who pays, interest in a pilot.
+
+Rules
+- Never invent numbers or quotes. If something wasn't said, write "not asked".
+- Keep quotes in the original language (often Portuguese).
+- Suggest 2-3 questions to ask next time that would fill the biggest gaps.
