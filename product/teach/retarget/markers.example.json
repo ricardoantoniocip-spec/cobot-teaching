@@ -1,0 +1,8 @@
+{
+  "dictionary": "DICT_4X4_50",
+  "table_id": 0,
+  "table_size_m": 0.06,
+  "hand_id": 1,
+  "hand_size_m": 0.04,
+  "base_to_table": {"xyz": [0.25, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]}
+}

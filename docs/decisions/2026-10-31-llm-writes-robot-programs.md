@@ -1,0 +1,5 @@
+# The product must generate the robot program with an LLM (2026-10-31)
+
+**What:** It's a requirement, not an option. The pipeline ends with a native program for the customer's cobot (URScript for UR first, then FANUC CRX, Doosan and the other big brands). An LLM writes that program from the labelled demo steps. The pipeline also checks it in simulation, and an engineer approves it before it runs. A vision LLM also segments and labels the demo video into steps. A learned policy (ACT/SmolVLA) is only used where a fixed program can't handle the variation.
+**Why:** Integrators and SMEs already run UR, FANUC and Doosan cells. They trust programs they can read, edit and certify, more than a black-box policy. Plain programs also run on the robot's own controller, with no GPU at the customer. That makes the "new task in a week" offer robot-agnostic.
+**What would change it:** a robot maker blocks generated programs, LLM programs can't pass simulation checks reliably on pilot tasks, or interviews show customers prefer a learned policy.

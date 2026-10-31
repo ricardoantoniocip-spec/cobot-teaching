@@ -1,6 +1,6 @@
 # Project context (read this first)
 
-Shared facts for every agent and skill. Last updated 2026-10-31. If something here is out of date, fix it in the same pull request as your work.
+Shared facts for every agent and skill. Last updated 2026-10-31.
 
 ## Ricardo
 - Production engineer in Eindhoven, mechanical engineering background, robotics minor (kinematics, IK). Python, Lean/LSS, OEE.
@@ -14,12 +14,14 @@ Shared facts for every agent and skill. Last updated 2026-10-31. If something he
 - Working prices (Ricardo sets the final number): EUR 7,500 per task in NL, EUR 5,000 in PT, first 3 PT pilots EUR 3,000. Support EUR 300 (NL) / EUR 200 (PT) per cell per month. Ideas from the competitor scan: a retrain price and a success clause.
 - Sell hard-to-program tasks only (varying parts, kitting, flexible parts). Simple fixed tasks are cheaper to program the normal way.
 - Stay robot-agnostic: UR, Doosan, FANUC CRX already installed at the customer.
+- Requirement (2026-10-31): an LLM writes the native robot program (URScript first, then FANUC, Doosan) from the labelled demo steps, checked in sim and approved by an engineer. Learned policies only where variation needs them. See docs/decisions/2026-10-31-llm-writes-robot-programs.md.
 
 ## The product
 - Capture: operator sensor sleeve (IMU + ArUco marker pods on torso, upper arm, forearm, back of hand; EMG for grip timing; FSR fingertip pads; 2 webcams). The back-of-hand pod matters most: the robot follows the hand in task space.
 - SO-101 leader arm = baseline and ground truth for calibrating the sleeve. Then PAROL6, then a real cobot via ROS 2.
 - Biggest technical risk: the gap between a human hand and a robot gripper. Answer: co-train with leader-arm demos.
 - Parts for the sleeve about EUR 450-650; SO-101 kit about EUR 500 (Eckstein, Germany).
+- Code: product/teach/retarget turns a video (ArUco marker on the hand) or a hand-pose CSV into an SO-101 joint trajectory and replays it (README there). Not yet tested on the real arm.
 - Patents: the broad sleeve idea is prior art. Keep methods as trade secrets, publish no method details. Possibly protectable later: calibrating the sleeve against the leader arm.
 
 ## Plan and gates
