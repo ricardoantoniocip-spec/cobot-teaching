@@ -22,4 +22,4 @@ Software that turns an operator's demonstration (camera, handheld tool or glove)
 - Write plainly and briefly. Ricardo reads on his phone.
 
 ## Folders
-docs/decisions, research, customers, product/teach, product/sim, hardware, funding.
+docs/decisions, research, customers, product/teach, product/sim, hardware, funding, learning.
