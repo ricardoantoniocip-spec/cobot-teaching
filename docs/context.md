@@ -38,11 +38,12 @@ Shared facts for every agent and skill. Last updated 2026-10-31.
 
 ## Customers and leads
 - Portugal first for users and pilots, Netherlands for funding and co-founder, South Africa later, US after proof.
-- Lead lists: customers/pipeline-2026-10-27.csv (30 PT + NL integrators), customers/pipeline-pt-2026-10-29.csv (15 PT leads). Interviews go into customers/pipeline.csv.
+- Lead lists: customers/pipeline-2026-10-27.csv (30 PT + NL integrators), customers/pipeline-pt-2026-10-29.csv (15 PT leads), customers/pipeline-za-2026-10-31.csv (4 SA integrators). Interviews go into customers/pipeline.csv.
+- Contacts come from public sources only (company sites, press). Don't scrape LinkedIn and don't use Ricardo's own connections (his choice, 2026-10-31).
 - Door openers in PT: Universal Robots Portugal, Growskills (UR distributor), INESC TEC CRIIS, PRODUTECH DIH.
 - Sales argument in PT: customers can get part of their robot investment subsidised through PT2030 programmes (check the current call).
 - Key hypothesis to test: programming time is a top-three barrier to more automation. Also ask integrators their day rate and hours per new task.
-- Outreach has been drafted (customers/outreach/2026-10-27.md) but nothing sent yet.
+- Outreach: week-1 drafts with named people in customers/outreach/2026-10-31.md (4 PT to send first, plus NL and SA). Target 4 per week. Nothing sent yet as of 2026-10-31.
 
 ## Competitors (details and sources in the competitor scan, research/ once saved)
 - Closest in Europe: Micropsi (Berlin), Mimic Robotics (Zurich, operator wearables), RoboTwin (Prague). Others: Wandelbots, RobCo, Standard Bots, T-Robotics, Physical Intelligence.
