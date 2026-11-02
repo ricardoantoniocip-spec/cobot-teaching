@@ -46,6 +46,7 @@ Shared facts for every agent and skill. Last updated 2026-10-31.
 
 ## Competitors (details and sources in the competitor scan, research/ once saved)
 - Closest in Europe: Micropsi (Berlin), Mimic Robotics (Zurich, operator wearables), RoboTwin (Prague). Others: Wandelbots, RobCo, Standard Bots, T-Robotics, Physical Intelligence.
+- New in Oct 2026: Machenta (London, $40M seed, one-shot task learning trained in sim) and Bleu Robotics (France, EUR 5M pre-seed, few-example learning for humanoids). See research/briefs/2026-11-02-market-brief.md.
 - No one found that sells a fixed price per task in PT or NL.
 
 ## Funding
