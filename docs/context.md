@@ -20,7 +20,7 @@ Shared facts for every agent and skill. Last updated 2026-10-31.
 - Capture: operator sensor sleeve (IMU + ArUco marker pods on torso, upper arm, forearm, back of hand; EMG for grip timing; FSR fingertip pads; 2 webcams). The back-of-hand pod matters most: the robot follows the hand in task space.
 - SO-101 leader arm = baseline and ground truth for calibrating the sleeve. Then PAROL6, then a real cobot via ROS 2.
 - Biggest technical risk: the gap between a human hand and a robot gripper. Answer: co-train with leader-arm demos.
-- Parts for the sleeve about EUR 450-650; SO-101 kit about EUR 500 (Eckstein, Germany).
+- Parts for the sleeve about EUR 450-650. SO-101 pair: self-print on the Bambu, buy servos and electronics: about EUR 226 China route or EUR 376 Eckstein (hardware/so101/build-parts-list.md). Follower only about EUR 124.
 - Code: product/teach/retarget turns a video (ArUco marker on the hand) or a hand-pose CSV into an SO-101 joint trajectory and replays it (README there). Not yet tested on the real arm.
 - Patents: the broad sleeve idea is prior art. Keep methods as trade secrets, publish no method details. Possibly protectable later: calibrating the sleeve against the leader arm.
 
