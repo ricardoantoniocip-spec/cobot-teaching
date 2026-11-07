@@ -40,8 +40,6 @@ Notes
 - Material: leader in PLA+ (fine, light load). Follower in PETG, or PETG-CF for stiffness. CF needs a hardened steel nozzle (order with the printer).
 - Filament: 1 kg of each is plenty for one arm each (estimate, not verified).
 
-## Recommendation
-Build both (Option B). The leader arm is the teleop and ground-truth device for the sleeve and for LeRobot training data; the follower alone cannot record demos. It is only ~€100 more on the China route.
-- Cheapest: China route, ~€226 (+VAT if not included), 2-4 weeks.
-- Fastest: Eckstein servo sets + accessory packs, no printed parts, €376 with 12 V follower, in a few days.
-- Option A (follower only) only makes sense if you drive it from the sleeve or scripts, not for collecting training demos.
+## Recommendation (updated 2026-11-07)
+Build the follower first (Option A, ~€124 China route, or €196 Eckstein with 12 V servos). Training happens from video and the digital twin (MuJoCo), so the follower is the real-world proof that video -> twin -> robot works, and the demo for integrators.
+Add the leader later (~€100 more) only if you want a teleop baseline to compare against, or to calibrate the sleeve. See docs/decisions/2026-11-07-follower-first.md.
