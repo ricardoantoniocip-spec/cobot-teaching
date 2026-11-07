@@ -43,7 +43,7 @@ Shared facts for every agent and skill. Last updated 2026-10-31.
 - Door openers in PT: Universal Robots Portugal, Growskills (UR distributor), INESC TEC CRIIS, PRODUTECH DIH.
 - Sales argument in PT: customers can get part of their robot investment subsidised through PT2030 programmes (check the current call).
 - Key hypothesis to test: programming time is a top-three barrier to more automation. Also ask integrators their day rate and hours per new task.
-- Outreach: week-1 drafts with named people in customers/outreach/2026-10-31.md (4 PT to send first, plus NL and SA). Target 4 per week. Nothing sent yet as of 2026-10-31.
+- Outreach: week-1 drafts in customers/outreach/2026-10-31.md (4 PT first, plus NL and SA); drafts and LinkedIn links for the 15 "connect next" people in customers/outreach/2026-11-07.md. Target 4 per week. Nothing sent yet as of 2026-11-07.
 
 ## Competitors (details and sources in the competitor scan, research/ once saved)
 - Closest in Europe: Micropsi (Berlin), Mimic Robotics (Zurich, operator wearables), RoboTwin (Prague). Others: Wandelbots, RobCo, Standard Bots, T-Robotics, Physical Intelligence.
