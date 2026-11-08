@@ -22,6 +22,7 @@ Shared facts for every agent and skill. Last updated 2026-10-31.
 - Biggest technical risk: the gap between a human hand and a robot gripper. Answer: co-train with leader-arm demos.
 - Parts for the sleeve about EUR 450-650. SO-101 pair: self-print on the Bambu, buy servos and electronics: about EUR 226 China route or EUR 376 Eckstein (hardware/so101/build-parts-list.md). Decision 2026-11-07: build the follower first (about EUR 124); leader optional later.
 - Code: product/teach/retarget turns a video (ArUco marker on the hand) or a hand-pose CSV into an SO-101 joint trajectory and replays it (README there). Not yet tested on the real arm.
+- Digital twin (2026-11-08): product/sim is a MuJoCo SO-101 with a pick-and-place table. Scripted demo -> retarget -> twin replay succeeds 20/20; episodes export to a LeRobotDataset for ACT training and `evaluate` scores a trained policy in the twin (README there). Not yet run on the laptop.
 - Patents: the broad sleeve idea is prior art. Keep methods as trade secrets, publish no method details. Possibly protectable later: calibrating the sleeve against the leader arm.
 
 ## Plan and gates

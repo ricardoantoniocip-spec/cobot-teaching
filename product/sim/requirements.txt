@@ -1,0 +1,5 @@
+mujoco>=3.3
+numpy>=1.26
+opencv-contrib-python>=4.8   # videos
+pytest>=8
+# lerobot[dataset,training]==0.6.1   # only for to-lerobot and evaluate (needs Python 3.12+)
