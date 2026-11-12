@@ -84,3 +84,13 @@ def test_table_marker_mode_recovers_true_positions(chain):
     got = res.demo.poses[:, :3, 3]
     assert res.mode == "table-marker"
     assert np.abs(got - np.array(true)[: len(got)]).max() < 0.002
+
+
+def test_manual_grip_times_and_trim_override_the_detector(chain):
+    frames = synthetic_operator_frames()
+    for f in frames:  # hand shape says "open" the whole time, like a whole-hand grasp of a wide part
+        f.hand_world = frames[0].hand_world
+    cfg = pose.PoseConfig(grip_events=[(2.5, 6.5)], t_end=8.0)
+    res = pose.frames_to_demo(frames, chain, cfg)
+    assert res.demo.t[-1] == pytest.approx(8.0, abs=0.05)
+    assert [s["step"] for s in pose.segment_steps(res.demo)] == ["reach", "grasp", "move", "release", "retreat"]

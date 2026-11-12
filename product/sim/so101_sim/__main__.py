@@ -51,6 +51,9 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--hand-width-mm", type=float, help="your knuckle width, index to little finger (table-marker mode)")
     s.add_argument("--close-ratio", type=float, default=0.5)
     s.add_argument("--open-ratio", type=float, default=0.7)
+    s.add_argument("--grips", help="set the grip by hand: seconds from grasp to release, e.g. 3.0-8.5 (times are shown on tracked.mp4)")
+    s.add_argument("--start", type=float, help="use the video from this second")
+    s.add_argument("--end", type=float, help="use the video up to this second")
 
     s = sub.add_parser("to-lerobot")
     s.add_argument("dir", type=Path, help="folder with episode_*.npz from `demos` or `from-video`")
@@ -110,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "from-video":
         from .from_video import from_video
 
-        return from_video(a.video, a.out, a.arm, a.use, a.markers, a.camera, a.hand_width_mm, a.close_ratio, a.open_ratio)
+        return from_video(a.video, a.out, a.arm, a.use, a.markers, a.camera, a.hand_width_mm, a.close_ratio, a.open_ratio, a.grips, a.start, a.end)
 
     if a.cmd == "to-lerobot":
         from .episodes import npz_to_lerobot

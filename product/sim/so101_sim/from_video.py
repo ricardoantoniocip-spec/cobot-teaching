@@ -96,13 +96,22 @@ def demo_to_episode(demo: HandDemo, steps: list[dict], out_dir: Path, episodes_d
     return VideoEpisode(part_xy, place_xy, res_copy, res_steps, rep.reached_fraction, saved, notes)
 
 
+def parse_grips(text: str | None) -> list[tuple[float, float]] | None:
+    """'3.0-8.5' or '3.0-8.5,12-15': seconds where the hand holds the part (close-open)."""
+    if not text:
+        return None
+    return [tuple(float(v) for v in part.split("-")) for part in text.split(",")]
+
+
 def from_video(video: Path, out: Path, arm: str = "right", use: str = "steps", markers: Path | None = None, camera: Path | None = None,
-               hand_width_mm: float | None = None, close_ratio: float = 0.5, open_ratio: float = 0.7) -> int:  # fmt: skip
+               hand_width_mm: float | None = None, close_ratio: float = 0.5, open_ratio: float = 0.7,
+               grips: str | None = None, start: float | None = None, end: float | None = None) -> int:  # fmt: skip
     from retarget import pose
     from retarget.video import CameraModel, MarkerSetup
 
     out_dir = out / video.stem
-    cfg = pose.PoseConfig(arm=arm, hand_width_mm=hand_width_mm, close_ratio=close_ratio, open_ratio=open_ratio)
+    cfg = pose.PoseConfig(arm=arm, hand_width_mm=hand_width_mm, close_ratio=close_ratio, open_ratio=open_ratio,
+                          grip_events=parse_grips(grips), t_start=start, t_end=end)  # fmt: skip
     print(f"1/3 tracking your {arm} arm in {video.name} (about as long as the video itself)")
     res, steps = pose.video_to_demo(video, out_dir, scripted._chain(), cfg,
                                     MarkerSetup.from_json(markers) if markers else None, CameraModel.from_json(camera) if camera else None)  # fmt: skip

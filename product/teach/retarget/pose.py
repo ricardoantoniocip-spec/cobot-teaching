@@ -72,6 +72,10 @@ class PoseConfig:
     smooth_s: float = 0.2  # moving average on the hand path
     max_gap_s: float = 0.5  # longer gaps without a hand are reported
     out_hz: float = 30.0
+    # Manual overrides, in seconds of the video (the time is printed on tracked.mp4)
+    grip_events: list[tuple[float, float]] | None = None  # [(t_close, t_open), ...] replaces the automatic grip
+    t_start: float | None = None  # use only this part of the video
+    t_end: float | None = None
     # body mode
     robot_reach_m: float = 0.33  # your fully stretched arm maps to this distance from the robot's shoulder
     max_radius_m: float = 0.27  # the hand path is shrunk to stay within this distance of the robot base
@@ -200,6 +204,7 @@ def draw_overlay(img: np.ndarray, f: ArmFrame, arm: str) -> np.ndarray:
 
     out = img.copy()
     s = max(1, round(img.shape[1] / 480))
+    cv2.putText(out, f"t = {f.t:.1f} s", (8 * s, 20 * s), cv2.FONT_HERSHEY_SIMPLEX, 0.6 * s, (0, 255, 255), 2 * s)
     if f.pose_px is not None:
         j = POSE[arm]
         pts = [tuple(int(v) for v in f.pose_px[j[n]]) for n in ("shoulder", "elbow", "wrist")]
@@ -296,6 +301,7 @@ def frames_to_demo(frames: list[ArmFrame], chain: SerialChain, cfg: PoseConfig |
     cfg = cfg or PoseConfig()
     j = POSE[cfg.arm]
     warnings: list[str] = []
+    frames = [f for f in frames if (cfg.t_start is None or f.t >= cfg.t_start) and (cfg.t_end is None or f.t <= cfg.t_end)]
     n = len(frames)
     t = np.array([f.t for f in frames])
     has_pose = np.array([f.pose_world is not None for f in frames])
@@ -371,7 +377,10 @@ def frames_to_demo(frames: list[ArmFrame], chain: SerialChain, cfg: PoseConfig |
     seen = np.isfinite(r)
     r = r[np.maximum.accumulate(np.where(seen, np.arange(n), np.flatnonzero(seen)[0]))]
     r_f = np.array([np.median(r[max(0, i - 2) : i + 3]) for i in range(n)])
-    grip = grip_states(r_f, cfg.close_ratio, cfg.open_ratio)
+    if cfg.grip_events:
+        grip = np.array([float(any(c <= ti < o for c, o in cfg.grip_events)) for ti in t])
+    else:
+        grip = grip_states(r_f, cfg.close_ratio, cfg.open_ratio)
 
     # --- cut to the tracked part, resample at a fixed rate, tool pointing down
     t_out = np.arange(t[first], t[last] + 1e-9, 1 / cfg.out_hz)

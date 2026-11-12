@@ -129,6 +129,17 @@ and train ACT on it exactly as in steps 3 and 4 below.
 - One pick and one place per video, 5-15 seconds. Start and end with an open hand.
 - Good light, sleeves that contrast with the table.
 
+### If the grip is not found
+
+The automatic grip only sees a thumb-and-index pinch. A whole-hand grasp of a wide part (a carton, a
+bottle) looks the same as a relaxed hand. Then set the grip by hand: open `tracked.mp4`, read the time
+printed top left when you take hold and when you let go, and pass them. `--end` cuts off the part
+where you reach for the camera.
+
+```powershell
+python -m so101_sim from-video my_task.mp4 --arm right --grips 3.0-8.5 --end 9.5
+```
+
 ### What the numbers mean (body mode, the default)
 
 Your shoulder is placed on the robot's shoulder and your arm is scaled to the robot's reach (about
@@ -141,8 +152,11 @@ measured place and add `--markers markers.json --camera camera.json --hand-width
 
 ### Limits of this first version
 
-- Tested on made-up landmarks through to a successful twin episode, and the detector was run on a sample
-  video. Not yet tested on a video of a real pick and place. Yours will be the first.
+- Tested on made-up landmarks through to a successful twin episode, and on one real video (12 Nov 2026,
+  laptop webcam, 15 frames a second, a juice carton moved from the sofa armrest to the seat). Arm and
+  hand were found in 129 of 141 frames. The grip was not found automatically (whole-hand grasp), so the
+  times were set with `--grips`. `steps` then succeeded in the twin, `copy` did not (80% of the path
+  reachable, and the pick was 9 cm above the "table").
 - One camera cannot see depth well. Expect a centimetre or two of error, which is why `copy` often
   misses the block and `steps` is used for training.
 - One grasp and one release per video. The gripper always points down.
