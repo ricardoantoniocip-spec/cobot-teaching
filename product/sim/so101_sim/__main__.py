@@ -6,6 +6,7 @@
   scripted-demo OUT.csv         write a scripted hand demo for the default part (input for `retarget convert`)
   replay TRAJ.csv               play a retarget trajectory in the twin and check the task result
   demos N                       make N varied pick-and-place demos, keep the successful ones as episodes
+  from-video VIDEO              track your arm in a plain video, replay it in the twin, save a training episode
   to-lerobot DIR REPO_ID        turn saved episodes into a LeRobotDataset (needs lerobot installed)
   evaluate POLICY_DIR           run a trained policy (e.g. ACT) in the twin, N random trials, count successes
 """
@@ -40,8 +41,19 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--seed", type=int, default=0)
     s.add_argument("--video", action="store_true", help="also save one mp4 per episode")
 
+    s = sub.add_parser("from-video")
+    s.add_argument("video", type=Path)
+    s.add_argument("--out", type=Path, default=Path("video_data"))
+    s.add_argument("--arm", default="right", choices=["right", "left"], help="which of your arms does the task")
+    s.add_argument("--use", default="steps", choices=["steps", "copy"], help="which robot motion becomes the training episode")
+    s.add_argument("--markers", type=Path, help="markers.json: switch to table-marker mode (true scale)")
+    s.add_argument("--camera", type=Path, help="camera.json with fx, fy, cx, cy, dist")
+    s.add_argument("--hand-width-mm", type=float, help="your knuckle width, index to little finger (table-marker mode)")
+    s.add_argument("--close-ratio", type=float, default=0.5)
+    s.add_argument("--open-ratio", type=float, default=0.7)
+
     s = sub.add_parser("to-lerobot")
-    s.add_argument("dir", type=Path, help="folder with episode_*.npz from `demos`")
+    s.add_argument("dir", type=Path, help="folder with episode_*.npz from `demos` or `from-video`")
     s.add_argument("repo_id", help="e.g. ricardocipriano/so101_sim_pick_place")
     s.add_argument("--root", type=Path, default=Path("sim_data/lerobot"))
     s.add_argument("--push", action="store_true", help="upload to the Hugging Face Hub as a private dataset")
@@ -94,6 +106,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.cmd == "demos":
         return demos(a.n, a.out, a.seed, a.video)
+
+    if a.cmd == "from-video":
+        from .from_video import from_video
+
+        return from_video(a.video, a.out, a.arm, a.use, a.markers, a.camera, a.hand_width_mm, a.close_ratio, a.open_ratio)
 
     if a.cmd == "to-lerobot":
         from .episodes import npz_to_lerobot

@@ -20,6 +20,7 @@ The arm model is the official one (TheRobotStudio/SO-ARM100, same commit as
 | `python -m so101_sim scripted-demo demo.csv` | A pick-and-place hand demo, same format as a video demo |
 | `python -m so101_sim replay traj.csv --video replay.mp4` | Plays a retarget trajectory in the twin, prints tracking, tool error and SUCCESS/FAIL |
 | `python -m so101_sim demos 50 --out sim_data` | 50 random part/place positions, keeps the successful runs as training episodes |
+| `python -m so101_sim from-video my_task.mp4` | Your own video to a twin replay and a training episode (see "From your own video") |
 | `python -m so101_sim to-lerobot sim_data USER/so101_sim_pick_place --root sim_data/lerobot` | Episodes to a LeRobotDataset (add `--push` to upload it, private, to your Hugging Face account) |
 | `python -m so101_sim evaluate POLICY_DIR --trials 20` | Runs a trained policy in the twin and counts successes |
 
@@ -78,6 +79,75 @@ python -m so101_sim evaluate outputs\act_so101_sim --trials 20 --video-dir outpu
 ```
 
 Write the score in learning/progress.md. Pass mark, same as week 2 of the learning plan: 12/20.
+
+## From your own video (12 Nov 2026)
+
+Film yourself doing a pick and place, and get a checked training episode. No markers on your body.
+
+```
+your video -> arm tracking (MediaPipe) -> pinch point + grip -> SO-101 joint angles (IK) -> twin replay -> episode -> LeRobotDataset
+```
+
+One-time setup, in the same venv:
+
+```powershell
+pip install -r product\teach\requirements-pose.txt     # MediaPipe, runs on the CPU (no GPU needed)
+```
+
+Then, from `product\sim`:
+
+```powershell
+python -m so101_sim from-video C:\path\to\my_task.mp4 --arm right
+```
+
+MediaPipe prints many `INFO:` and `W0000` lines. Ignore them. It prints three stages and writes a folder `video_data\my_task\`:
+
+| File | What to look for |
+|---|---|
+| `tracked.mp4` | Your video with the arm drawn on it. The dot between thumb and index turns red when it sees a grip. |
+| `arm_track.csv` | Your elbow, wrist and pinch point per frame (metres from your shoulder), elbow angle, grip. |
+| `steps.json` | The demo cut into steps: reach, grasp, move, release, retreat. `label` is empty: a vision model fills it later. |
+| `replay_copy.mp4` | The robot following your hand path sample by sample. |
+| `replay_steps.mp4` | A clean robot motion rebuilt from where you gripped and released. This one becomes the episode. |
+| `result.json` | Block and zone positions, success of both replays. |
+
+Each video that succeeds adds one file to `video_data\episodes\`. Film 30-50 takes with the block in
+different places, then:
+
+```powershell
+python -m so101_sim to-lerobot video_data\episodes ricardocipriano/so101_video_pick_place --root video_data\lerobot
+```
+
+and train ACT on it exactly as in steps 3 and 4 below.
+
+### How to film
+
+- Phone or webcam on a tripod or a stack of books. It must not move.
+- Your whole working arm in view the whole time: shoulder, elbow, wrist and hand. Both shoulders visible.
+- Sit facing the camera or at an angle to it. Not with your back to it.
+- Grip with thumb and index finger, like the robot's two-finger gripper. Open your hand wide between grips.
+- One pick and one place per video, 5-15 seconds. Start and end with an open hand.
+- Good light, sleeves that contrast with the table.
+
+### What the numbers mean (body mode, the default)
+
+Your shoulder is placed on the robot's shoulder and your arm is scaled to the robot's reach (about
+half size). The lowest point of your hand is taken as the table. So the robot does the same motion,
+smaller, and the twin puts the block where your hand closed. Positions are not true millimetres.
+
+For the real arm and real parts you need true positions: tape a printed ArUco marker on the table at a
+measured place and add `--markers markers.json --camera camera.json --hand-width-mm 85`
+(see product/teach/README.md for the two files). This mode is unit tested but not yet tried on a real video.
+
+### Limits of this first version
+
+- Tested on made-up landmarks through to a successful twin episode, and the detector was run on a sample
+  video. Not yet tested on a video of a real pick and place. Yours will be the first.
+- One camera cannot see depth well. Expect a centimetre or two of error, which is why `copy` often
+  misses the block and `steps` is used for training.
+- One grasp and one release per video. The gripper always points down.
+- The robot follows your hand, not your elbow. A human arm has 7 joints and the SO-101 has 5, so the
+  joint angles cannot be copied one to one.
 
 ## What is tested (8 Nov 2026, in the cloud, Linux, Python 3.13)
 
