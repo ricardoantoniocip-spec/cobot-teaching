@@ -22,9 +22,9 @@
 
         <form class="form-card" id="task-form" novalidate>
           <div class="form-grid">
-            <div class="field"><label for="f-name">Name</label><input id="f-name" name="name" autocomplete="name" required placeholder="Your name"></div>
-            <div class="field"><label for="f-company">Company</label><input id="f-company" name="company" autocomplete="organization" required placeholder="Company name"></div>
-            <div class="field"><label for="f-email">Email</label><input id="f-email" name="email" type="email" autocomplete="email" required placeholder="you@company.com"></div>
+            <div class="field"><label for="f-name">Name <span class="req" aria-hidden="true">*</span></label><input id="f-name" name="name" autocomplete="name" required placeholder="Your name"></div>
+            <div class="field"><label for="f-company">Company <span class="req" aria-hidden="true">*</span></label><input id="f-company" name="company" autocomplete="organization" required placeholder="Company name"></div>
+            <div class="field"><label for="f-email">Email <span class="req" aria-hidden="true">*</span></label><input id="f-email" name="email" type="email" autocomplete="email" required placeholder="you@company.com"></div>
             <div class="field"><label for="f-country">Country</label>
               <select id="f-country" name="country">
                 <option>Portugal</option><option>Netherlands</option><option>South Africa</option><option>Belgium</option><option>Germany</option><option>Spain</option><option>Other</option>
@@ -46,7 +46,7 @@
               </select>
             </div>
             <div class="field full">
-              <label for="f-task">The task</label>
+              <label for="f-task">The task <span class="req" aria-hidden="true">*</span></label>
               <span class="hint">For example: pick 6 different brackets from bins and place them in a kit tray with 12 slots.</span>
               <textarea id="f-task" name="task" required placeholder="What should the robot do?"></textarea>
             </div>

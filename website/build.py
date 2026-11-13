@@ -21,6 +21,7 @@ PAGES = [
      "A fixed-price service that sets up a new cobot task in one week, for integrators and high-mix factories."),
     ("about.html", "about", "About | {BRAND}",
      "Why {BRAND} exists, who is behind it and where it is going."),
+    ("404.html", "none", "Page not found | {BRAND}", "This page does not exist."),
     ("contact.html", "contact", "Tell us your task | {BRAND}",
      "Describe a task you want a cobot to learn. We reply with what is possible and what it would take."),
 ]

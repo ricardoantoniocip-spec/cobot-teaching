@@ -24,7 +24,14 @@
       </div>
     </section>
 
-    <div class="wrap"><div class="ruler" aria-hidden="true"></div></div>
+    <div class="wrap">
+      <dl class="spec" aria-label="Prototype data sheet">
+        <div><dt>Input</dt><dd>One webcam video<small>No markers, no gloves</small></dd></div>
+        <div><dt>Output</dt><dd>URScript<small>Universal Robots e-Series</small></dd></div>
+        <div><dt>Verified in</dt><dd>URSim and MuJoCo<small>Simulation, before any robot moves</small></dd></div>
+        <div><dt>Task types</dt><dd>Kitting, pick-and-place<small>Machine tending next</small></dd></div>
+      </dl>
+    </div>
 
     <section class="section">
       <div class="wrap">
@@ -50,7 +57,28 @@
             <p>The person on the line does the job every day. Their know-how rarely reaches the robot directly.</p>
           </div>
         </div>
-        <p class="statement">{BRAND} lets the person who knows the task <em>show it</em>, and turns that demonstration into a program the robot already understands.</p>
+<div class="compare">
+          <div class="old">
+            <span class="k">Today</span>
+            <ol>
+              <li>A robot programmer travels to the cell</li>
+              <li>Jogs the robot to every point on the teach pendant</li>
+              <li>Writes the logic by hand in the robot's language</li>
+              <li>Starts again for the next variant</li>
+            </ol>
+            <p class="total">Days per new task</p>
+          </div>
+          <div class="new">
+            <span class="k">With {BRAND}</span>
+            <ol>
+              <li>The operator shows the task on camera</li>
+              <li>AI labels the steps, software measures the positions</li>
+              <li>The robot's own program is generated and simulated</li>
+              <li>For a variant, change the task file and generate again</li>
+            </ol>
+            <p class="total">Our goal: under one day<small>A target we are working towards, not yet measured on a real cell.</small></p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -61,11 +89,11 @@
           <h2>From one video to a checked robot program.</h2>
         </div>
         <ol class="pipeline">
-          <li><h3>Record</h3><p>An operator does the task once in front of an ordinary camera.</p><span class="out">→ video</span></li>
-          <li><h3>Track</h3><p>Computer vision follows the arm and hand and finds when the part is gripped and released.</p><span class="out">→ positions in mm</span></li>
-          <li><h3>Label</h3><p>A vision AI names each step: reach, grasp, move, release.</p><span class="out">→ labelled steps</span></li>
-          <li><h3>Generate</h3><p>A fixed generator writes the robot's own program from a small task file.</p><span class="out">→ URScript</span></li>
-          <li><h3>Verify</h3><p>The program runs in a simulator first. An engineer approves it before the real robot moves.</p><span class="out">→ approved program</span></li>
+          <li><svg class="ico" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="22" height="18" rx="3"/><path d="M26 17l10-5v16l-10-5"/><circle class="hot" cx="11" cy="17" r="2" fill="var(--signal)"/></svg><h3>Record</h3><p>An operator does the task once in front of an ordinary camera.</p><span class="out">→ video</span></li>
+          <li><svg class="ico" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 31l8-14 12-4"/><circle cx="7" cy="31" r="3"/><circle cx="15" cy="17" r="3"/><circle class="hot" cx="29" cy="12" r="4"/><path class="hot" d="M29 4v3M29 17v3M21 12h3M34 12h3"/></svg><h3>Track</h3><p>Computer vision follows the arm and hand and finds when the part is gripped and released.</p><span class="out">→ positions in mm</span></li>
+          <li><svg class="ico" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h14l16 14-12 12L5 20z"/><circle class="hot" cx="13" cy="15" r="2.5"/></svg><h3>Label</h3><p>A vision AI names each step: reach, grasp, move, release.</p><span class="out">→ labelled steps</span></li>
+          <li><svg class="ico" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 11L5 20l9 9M26 11l9 9-9 9"/><path class="hot" d="M23 7l-6 26"/></svg><h3>Generate</h3><p>A fixed generator writes the robot's own program from a small task file.</p><span class="out">→ URScript</span></li>
+          <li><svg class="ico" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4l13 5v9c0 9-6 15-13 18C13 33 7 27 7 18V9z"/><path class="hot" d="M14 19l4.5 4.5L27 15"/></svg><h3>Verify</h3><p>The program runs in a simulator first. An engineer approves it before the real robot moves.</p><span class="out">→ approved program</span></li>
         </ol>
         <p style="margin-top:32px"><a class="btn btn-ghost" href="how-it-works.html">The details, step by step <span class="arrow" aria-hidden="true">→</span></a></p>
       </div>
@@ -81,7 +109,7 @@
         </div>
         <div>
           <div class="media-frame">
-            <video controls preload="metadata" playsinline poster="assets/img/poster-ad.jpg" width="1280" height="720">
+            <video controls preload="none" playsinline poster="assets/img/poster-ad.jpg" width="1280" height="720">
               <source src="assets/video/robotonic-ad.mp4" type="video/mp4">
             </video>
           </div>
