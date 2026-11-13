@@ -1,0 +1,60 @@
+# ----------------------------------------------------------------------
+# Program : move_carton_to_seat
+# Task    : Pick the juice carton up from the sofa armrest and put it down on the sofa seat.
+# Made by : cobot-teaching taskprog 0.1 from task.json (sha256 967dec498e37), cell ur5e_table
+# Status  : NOT APPROVED. Run it in URSim first, then on the robot at reduced speed with an
+#           engineer present. Do not edit by hand: change the task file and generate again.
+# Units   : metres, radians, seconds (the task file uses mm and degrees)
+# ----------------------------------------------------------------------
+def move_carton_to_seat():
+  set_tcp(p[0, 0, 0.15, 0, 0, 0])
+  set_payload(1)
+
+  # Work frame: where the task's table sits in the robot base frame. Re-teach this one
+  # pose to move the whole task.
+  work = p[0.25, 0, 0, 0, 0, 0]
+
+  # Locations, in the work frame: on the surface the object stands on, tool pointing down.
+  # Heights above a location are pose_trans offsets along -tool z (straight up).
+  loc_armrest = pose_trans(work, p[0.1763, 0.0461, 0, 3.141593, 0, 0])  # top of the left sofa armrest
+  loc_sofa_seat = pose_trans(work, p[0.2227, -0.0729, 0, 3.141593, 0, 0])  # front edge of the sofa seat, right of the armrest
+
+  home_q = [0, -1.570796, 1.570796, -1.570796, -1.570796, 0]
+
+  def ct_gripper(close, settle_s):
+    set_tool_digital_out(0, close)
+    sleep(settle_s)
+  end
+
+  # start: home, gripper open
+  movej(home_q, a=2.617994, v=1.047198)  # start at home
+  ct_gripper(False, 0.5)  # open gripper
+  textmsg("CT step 0 done ", get_actual_tcp_pose())
+
+  # step 1/4: home  (start at home)
+  textmsg("CT step 1 home")
+  movej(home_q, a=2.617994, v=1.047198)  # home
+  textmsg("CT step 1 done ", get_actual_tcp_pose())
+
+  # step 2/4: pick juice_carton at armrest  (grip the carton near its top with the whole hand)
+  textmsg("CT step 2 pick juice_carton at armrest")
+  movej(get_inverse_kin(pose_trans(loc_armrest, p[0, 0, -0.07, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above armrest
+  movel(pose_trans(loc_armrest, p[0, 0, -0.02, 0, 0, 0]), a=0.8, v=0.15)  # down to grasp height
+  ct_gripper(True, 0.5)  # close gripper
+  movel(pose_trans(loc_armrest, p[0, 0, -0.07, 0, 0, 0]), a=0.8, v=0.15)  # back up from armrest
+  textmsg("CT step 2 done ", get_actual_tcp_pose())
+
+  # step 3/4: place juice_carton at sofa_seat  (let go of the carton standing on the seat)
+  textmsg("CT step 3 place juice_carton at sofa_seat")
+  movej(get_inverse_kin(pose_trans(loc_sofa_seat, p[0, 0, -0.072, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above sofa_seat
+  movel(pose_trans(loc_sofa_seat, p[0, 0, -0.022, 0, 0, 0]), a=0.8, v=0.15)  # down to release height
+  ct_gripper(False, 0.5)  # open gripper
+  movel(pose_trans(loc_sofa_seat, p[0, 0, -0.072, 0, 0, 0]), a=0.8, v=0.15)  # back up from sofa_seat
+  textmsg("CT step 3 done ", get_actual_tcp_pose())
+
+  # step 4/4: home  (back to home)
+  textmsg("CT step 4 home")
+  movej(home_q, a=2.617994, v=1.047198)  # home
+  textmsg("CT step 4 done ", get_actual_tcp_pose())
+  textmsg("CT program finished")
+end

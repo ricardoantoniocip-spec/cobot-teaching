@@ -1,6 +1,6 @@
 # Project context (read this first)
 
-Shared facts for every agent and skill. Last updated 2026-10-31.
+Shared facts for every agent and skill. Last updated 2026-11-13.
 
 ## Ricardo
 - Production engineer in Eindhoven, mechanical engineering background, robotics minor (kinematics, IK). Python, Lean/LSS, OEE.
@@ -14,6 +14,7 @@ Shared facts for every agent and skill. Last updated 2026-10-31.
 - Working prices (Ricardo sets the final number): EUR 7,500 per task in NL, EUR 5,000 in PT, first 3 PT pilots EUR 3,000. Support EUR 300 (NL) / EUR 200 (PT) per cell per month. Ideas from the competitor scan: a retrain price and a success clause.
 - Sell hard-to-program tasks only (varying parts, kitting, flexible parts). Simple fixed tasks are cheaper to program the normal way.
 - Stay robot-agnostic: UR, Doosan, FANUC CRX already installed at the customer.
+- How (2026-11-13): the vision LLM only names and labels demo steps; a brand-neutral task file (pick/place/move, mm) plus a cell file go through a fixed generator to URScript or an SO-101 trajectory, checked offline, in URSim and in the twin. product/teach/taskprog; take 1 passes all three. See docs/decisions/2026-11-13-task-file-then-code.md.
 - Requirement (2026-10-31): an LLM writes the native robot program (URScript first, then FANUC, Doosan) from the labelled demo steps, checked in sim and approved by an engineer. Learned policies only where variation needs them. See docs/decisions/2026-10-31-llm-writes-robot-programs.md.
 
 ## The product

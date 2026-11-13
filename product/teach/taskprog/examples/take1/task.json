@@ -1,0 +1,83 @@
+{
+  "format": "cobot-task/0.1",
+  "name": "move_carton_to_seat",
+  "description": "Pick the juice carton up from the sofa armrest and put it down on the sofa seat.",
+  "units": {
+    "length": "mm",
+    "angle": "deg",
+    "time": "s"
+  },
+  "source": {
+    "video": "take1.mp4",
+    "steps_mode": "body",
+    "arm": "right",
+    "labelled_by": "Claude (in the project chat, from 5 frames of tracked.mp4; not yet via the API)"
+  },
+  "objects": {
+    "juice_carton": {
+      "size_mm": [20.0, 20.0, 40.0],
+      "grasp_height_mm": 20.0,
+      "description": "1 litre juice carton (red, Dubbel Fris), standing upright"
+    }
+  },
+  "locations": {
+    "armrest": {
+      "xyz_mm": [176.3, 46.1, 0.0],
+      "yaw_deg": 0.0,
+      "note": "top of the left sofa armrest"
+    },
+    "sofa_seat": {
+      "xyz_mm": [222.7, -72.9, 0.0],
+      "yaw_deg": 0.0,
+      "note": "front edge of the sofa seat, right of the armrest"
+    }
+  },
+  "defaults": {
+    "approach_mm": 50,
+    "travel_height_mm": 100,
+    "grip_time_s": 0.5,
+    "speed": "normal"
+  },
+  "steps": [
+    {
+      "do": "home",
+      "label": "start at home",
+      "id": 1
+    },
+    {
+      "do": "pick",
+      "object": "juice_carton",
+      "at": "armrest",
+      "label": "grip the carton near its top with the whole hand",
+      "demo": {
+        "t_start": 0.0,
+        "t_end": 3.067
+      },
+      "id": 2
+    },
+    {
+      "do": "place",
+      "object": "juice_carton",
+      "at": "sofa_seat",
+      "label": "let go of the carton standing on the seat",
+      "demo": {
+        "t_start": 3.067,
+        "t_end": 8.533
+      },
+      "id": 3
+    },
+    {
+      "do": "home",
+      "label": "back to home",
+      "id": 4
+    }
+  ],
+  "review": [
+    "object size 20 x 20 x 40 mm and grasp height 20 mm are assumed, not measured",
+    "heights flattened to one table (--flat-table): the demo's measured heights were not used",
+    "yaw of every location is 0: the video app does not measure object orientation yet",
+    "positions come from body mode (arm scaled to the SO-101, not true millimetres)",
+    "vision LLM: the seat cushion is soft: a robot placing here needs a slower release",
+    "vision LLM: the carton is about 70 x 70 x 195 mm, much bigger than the twin's test block"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "format": "cobot-cell/0.1",
+  "name": "ur5e_table",
+  "note": "Example UR5e cell for URSim. Work frame 250 mm in front of the base, on the table the robot stands on. Gripper on tool output 0 (most 2-finger grippers wired as a simple digital output). Edit for the real cell.",
+  "robot": "ur5e",
+  "work_frame": {"xyz_mm": [250, 0, 0], "yaw_deg": 0},
+  "tcp_mm": [0, 0, 150],
+  "payload_kg": 1.0,
+  "gripper": {"type": "digital_out", "output": "tool", "pin": 0, "close_value": true},
+  "home_joints_deg": [0, -90, 90, -90, -90, 0],
+  "speeds": {
+    "slow":   {"joint_deg_s": 30, "joint_deg_s2": 80,  "linear_mm_s": 50,  "linear_mm_s2": 300},
+    "normal": {"joint_deg_s": 60, "joint_deg_s2": 150, "linear_mm_s": 150, "linear_mm_s2": 800}
+  },
+  "release_gap_mm": 2,
+  "min_tool_height_mm": 5,
+  "work_area_mm": [-200, 400, -400, 400]
+}

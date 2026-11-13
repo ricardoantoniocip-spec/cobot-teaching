@@ -1,0 +1,19 @@
+{
+  "task_name": "move_carton_to_seat",
+  "task_description": "Pick the juice carton up from the sofa armrest and put it down on the sofa seat.",
+  "objects": [
+    {"name": "juice_carton", "description": "1 litre juice carton (red, Dubbel Fris), standing upright"}
+  ],
+  "steps": [
+    {"index": 0, "label": "reach from the lap to the carton on the armrest", "object": "juice_carton", "location": null, "location_description": "", "matches_step_type": true, "comment": ""},
+    {"index": 1, "label": "grip the carton near its top with the whole hand", "object": "juice_carton", "location": "armrest", "location_description": "top of the left sofa armrest", "matches_step_type": true, "comment": "whole-hand grasp from the side, not a pinch"},
+    {"index": 2, "label": "carry the carton across and down to the seat", "object": "juice_carton", "location": null, "location_description": "", "matches_step_type": true, "comment": "carton stays upright"},
+    {"index": 3, "label": "let go of the carton standing on the seat", "object": "juice_carton", "location": "sofa_seat", "location_description": "front edge of the sofa seat, right of the armrest", "matches_step_type": true, "comment": "the seat is lower than the armrest"},
+    {"index": 4, "label": "pull the hand back from the carton", "object": null, "location": null, "location_description": "", "matches_step_type": true, "comment": ""}
+  ],
+  "review": [
+    "the seat cushion is soft: a robot placing here needs a slower release",
+    "the carton is about 70 x 70 x 195 mm, much bigger than the twin's test block"
+  ],
+  "_labelled_by": "Claude (in the project chat, from 5 frames of tracked.mp4; not yet via the API)"
+}

@@ -1,5 +1,8 @@
 # Teaching pipeline (product/teach)
 
+**New (13 Nov 2026):** [taskprog](taskprog/README.md) turns demo steps into a task file and a native
+robot program (URScript, SO-101), checked in URSim and the twin.
+
 ## retarget: from operator video to SO-101 motion
 
 This is the bridge from "operator does the task" to "arm repeats it".
