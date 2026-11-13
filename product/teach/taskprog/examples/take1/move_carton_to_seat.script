@@ -19,7 +19,7 @@ def move_carton_to_seat():
   loc_armrest = pose_trans(work, p[0.1763, 0.0461, 0, 3.141593, 0, 0])  # top of the left sofa armrest
   loc_sofa_seat = pose_trans(work, p[0.2227, -0.0729, 0, 3.141593, 0, 0])  # front edge of the sofa seat, right of the armrest
 
-  home_q = [0, -1.570796, 1.570796, -1.570796, -1.570796, 0]
+  home_q = [3.141593, -1.570796, 1.570796, -1.570796, -1.570796, 0]
 
   def ct_gripper(close, settle_s):
     set_tool_digital_out(0, close)

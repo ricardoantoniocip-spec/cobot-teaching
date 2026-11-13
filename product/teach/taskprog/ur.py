@@ -140,6 +140,8 @@ def reach_check(plan: list[Motion], cell: Cell, line_samples: int = 20) -> list[
                 problem = f"out of reach ({err_mm:.0f} mm short)"
             elif np.abs(q - home).max() > np.radians(170):
                 problem = "joint solution far from home (the arm would swing a joint more than 170 deg)"
+            elif not -170 <= np.degrees(q[1]) <= -10 or q[2] * home[2] < 0:
+                problem = "odd arm posture (leaning over backwards or elbow flipped): is the work frame on the side the home pose faces?"
             q_now, pose_now = q, m.pose
         elif m.kind == "line":
             q = q_now.copy()

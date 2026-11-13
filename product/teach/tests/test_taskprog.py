@@ -241,3 +241,14 @@ def test_label_call_shape_with_a_fake_client(monkeypatch):
     assert labels["task_name"] == "move_carton_to_seat" and labels["_labelled_by"] == "claude-opus-5-5"
     assert sent["output_config"]["format"]["schema"] is LABELS_SCHEMA
     assert sum(c["type"] == "image" for c in sent["messages"][0]["content"]) == 11
+
+
+def test_work_frame_behind_the_home_pose_is_flagged():
+    # Found on the first URSim recording: with home facing -x and the table at +x the arm
+    # reached over backwards. The program still "passed", so the check now warns.
+    import dataclasses
+
+    backwards = dataclasses.replace(UR, home_joints_deg=(0.0, -90.0, 90.0, -90.0, -90.0, 0.0))
+    findings = check(parse_task(take1_task()), backwards)
+    assert any("odd arm posture" in f.text for f in findings)
+    assert not any("odd arm posture" in f.text for f in check(parse_task(take1_task()), UR))

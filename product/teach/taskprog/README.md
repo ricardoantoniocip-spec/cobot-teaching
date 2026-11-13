@@ -61,3 +61,11 @@ docker stop ursim
 ## Tests
 
 `python -m pytest -q tests` (38 tests, about 30 s; the twin test needs mujoco and skips without it).
+
+## Demo video
+
+`tools/record_ursim.js` records URSim's screen while the program runs; `tools/make_demo_video.py`
+builds the 50-second video (operator video with labels, task file, URScript, URSim, twin) from a
+take's own files. Take 1's video is in the project files (demo-video/). Found while recording:
+the first cell had the table behind the home pose, so the arm reached over backwards. `check`
+now warns about that posture and the example cell faces the table.
