@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Tell us your task | Robotonic</title>
+  <meta name="claude:viewport-fit-sides" content="cover">
+  <meta name="description" content="Describe a task you want a cobot to learn. We reply with what is possible and what it would take.">
+  <meta property="og:title" content="Tell us your task | Robotonic">
+  <meta property="og:description" content="Describe a task you want a cobot to learn. We reply with what is possible and what it would take.">
+  <meta property="og:image" content="assets/img/poster-ad.jpg">
+  <meta name="theme-color" content="#0f1a2a">
+  
+  <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap nav">
+      <a class="brand" href="index.html" aria-label="Robotonic home">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="1" y="1" width="30" height="30" rx="7" fill="var(--pendant)"/>
+          <path d="M8 25 L12 14 L22 10" fill="none" stroke="var(--pendant-ink)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M22 10 C26 13 26 19 22 22" fill="none" stroke="var(--pendant-dim)" stroke-width="1.4" stroke-dasharray="1.6 2.2" stroke-linecap="round"/>
+          <circle cx="12" cy="14" r="2.2" fill="var(--pendant)" stroke="var(--pendant-ink)" stroke-width="1.6"/>
+          <circle cx="22" cy="10" r="2.6" fill="var(--signal)"/>
+          <rect x="5.5" y="24.5" width="7" height="2.4" rx="1" fill="var(--pendant-ink)"/>
+        </svg>
+        <span class="brand-name">Robotonic</span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links">Menu</button>
+      <nav aria-label="Main">
+        <ul class="nav-links" id="nav-links">
+          <li><a href="how-it-works.html">How it works</a></li>
+          <li><a href="service.html">Service</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a class="btn btn-signal" href="contact.html" aria-current="page">Tell us your task</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-hero">
+      <div class="wrap">
+        <span class="eyebrow">Contact</span>
+        <h1>Tell us your task.</h1>
+        <p class="lead">Describe one task you would like a cobot to learn. We reply with whether it is a good fit, what we would need from you and what it would take.</p>
+      </div>
+    </section>
+
+    <section class="section" style="padding-top:0">
+      <div class="wrap split" style="align-items:start">
+        <div class="stack">
+          <h3>What helps us most</h3>
+          <ul class="checklist">
+            <li>What the robot should pick, and where it should put it</li>
+            <li>How many different parts or variants there are</li>
+            <li>How often the task changes</li>
+            <li>Which robot and gripper you have, if any</li>
+            <li>A phone video of someone doing the task, if you can share one</li>
+          </ul>
+          <p class="muted" style="font-size:.9rem">This form does not store anything. It writes your message so you can send it to us.</p>
+        </div>
+
+        <form class="form-card" id="task-form" novalidate>
+          <div class="form-grid">
+            <div class="field"><label for="f-name">Name</label><input id="f-name" name="name" autocomplete="name" required placeholder="Your name"></div>
+            <div class="field"><label for="f-company">Company</label><input id="f-company" name="company" autocomplete="organization" required placeholder="Company name"></div>
+            <div class="field"><label for="f-email">Email</label><input id="f-email" name="email" type="email" autocomplete="email" required placeholder="you@company.com"></div>
+            <div class="field"><label for="f-country">Country</label>
+              <select id="f-country" name="country">
+                <option>Portugal</option><option>Netherlands</option><option>South Africa</option><option>Belgium</option><option>Germany</option><option>Spain</option><option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label for="f-role">We are</label>
+              <select id="f-role" name="role">
+                <option>A system integrator</option><option>A manufacturer</option><option>A robot distributor</option><option>Research or education</option><option>Something else</option>
+              </select>
+            </div>
+            <div class="field"><label for="f-robot">Robot</label>
+              <select id="f-robot" name="robot">
+                <option>Universal Robots (UR3e / UR5e / UR10e)</option><option>Universal Robots (CB-series)</option><option>FANUC CRX</option><option>Doosan</option><option>Another brand</option><option>No robot yet</option>
+              </select>
+            </div>
+            <div class="field full"><label for="f-change">How often does the task change?</label>
+              <select id="f-change" name="change">
+                <option>Every day</option><option>Every week</option><option>Every month</option><option>A few times a year</option><option>Rarely</option>
+              </select>
+            </div>
+            <div class="field full">
+              <label for="f-task">The task</label>
+              <span class="hint">For example: pick 6 different brackets from bins and place them in a kit tray with 12 slots.</span>
+              <textarea id="f-task" name="task" required placeholder="What should the robot do?"></textarea>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-signal" type="submit">Write my message <span class="arrow" aria-hidden="true">→</span></button>
+          </div>
+          <div class="result" id="task-result" hidden>
+            <p id="task-note">Your message is ready.</p>
+            <pre id="task-text"></pre>
+            <div class="form-actions">
+              <button class="btn btn-ghost" type="button" id="task-copy">Copy message</button>
+              <a class="btn btn-signal" id="task-mail" href="#" hidden>Open in email</a>
+            </div>
+          </div>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div style="display:grid;gap:14px">
+          <span class="brand-name">Robotonic</span>
+          <p>Teach a cobot by showing it. Software that turns an operator's demonstration into a robot program an engineer can read, check and run.</p>
+        </div>
+        <div>
+          <h4>Company</h4>
+          <ul>
+            <li><a href="how-it-works.html">How it works</a></li>
+            <li><a href="service.html">New task in a week</a></li>
+            <li><a href="about.html">About</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Talk to us</h4>
+          <ul>
+            <li><a href="contact.html">Tell us your task</a></li>
+            <li><a href="about.html#cofounder">Co-founder wanted</a></li>
+            <li><span class="muted">Eindhoven, NL · Portugal</span></li>
+          </ul>
+        </div>
+      </div>
+      <div class="legal">
+        <span>© <span data-year>2026</span> Robotonic. Early-stage startup: the product is a prototype and the results shown run in simulation.</span>
+        <span>Universal Robots, URScript, UR3e, UR5e and UR10e are trademarks of Universal Robots A/S. FANUC and Doosan are trademarks of their owners. Robotonic is independent and not affiliated with or endorsed by these companies.</span>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/main.js"></script>
+</body>
+</html>

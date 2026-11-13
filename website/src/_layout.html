@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{{TITLE}}</title>
+  <meta name="claude:viewport-fit-sides" content="cover">
+  <meta name="description" content="{{DESCRIPTION}}">
+  <meta property="og:title" content="{{TITLE}}">
+  <meta property="og:description" content="{{DESCRIPTION}}">
+  <meta property="og:image" content="assets/img/poster-ad.jpg">
+  <meta name="theme-color" content="#0f1a2a">
+  {{CANONICAL}}
+  <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap nav">
+      <a class="brand" href="index.html" aria-label="{BRAND} home">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="1" y="1" width="30" height="30" rx="7" fill="var(--pendant)"/>
+          <path d="M8 25 L12 14 L22 10" fill="none" stroke="var(--pendant-ink)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M22 10 C26 13 26 19 22 22" fill="none" stroke="var(--pendant-dim)" stroke-width="1.4" stroke-dasharray="1.6 2.2" stroke-linecap="round"/>
+          <circle cx="12" cy="14" r="2.2" fill="var(--pendant)" stroke="var(--pendant-ink)" stroke-width="1.6"/>
+          <circle cx="22" cy="10" r="2.6" fill="var(--signal)"/>
+          <rect x="5.5" y="24.5" width="7" height="2.4" rx="1" fill="var(--pendant-ink)"/>
+        </svg>
+        <span class="brand-name">{BRAND}</span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links">Menu</button>
+      <nav aria-label="Main">
+        <ul class="nav-links" id="nav-links">
+          {{NAV}}
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+{{BODY}}
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div style="display:grid;gap:14px">
+          <span class="brand-name">{BRAND}</span>
+          <p>Teach a cobot by showing it. Software that turns an operator's demonstration into a robot program an engineer can read, check and run.</p>
+        </div>
+        <div>
+          <h4>Company</h4>
+          <ul>
+            <li><a href="how-it-works.html">How it works</a></li>
+            <li><a href="service.html">New task in a week</a></li>
+            <li><a href="about.html">About</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Talk to us</h4>
+          <ul>
+            <li><a href="contact.html">Tell us your task</a></li>
+            <li><a href="about.html#cofounder">Co-founder wanted</a></li>
+            <li><span class="muted">Eindhoven, NL · Portugal</span></li>
+          </ul>
+        </div>
+      </div>
+      <div class="legal">
+        <span>© <span data-year>2026</span> {BRAND}. Early-stage startup: the product is a prototype and the results shown run in simulation.</span>
+        <span>Universal Robots, URScript, UR3e, UR5e and UR10e are trademarks of Universal Robots A/S. FANUC and Doosan are trademarks of their owners. {BRAND} is independent and not affiliated with or endorsed by these companies.</span>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/main.js"></script>
+</body>
+</html>
