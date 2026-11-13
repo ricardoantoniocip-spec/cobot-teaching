@@ -91,6 +91,7 @@ class PoseResult:
     warnings: list[str] = field(default_factory=list)
     mode: str = "body"
     scale: float = 1.0  # robot metres per human metre (body mode)
+    video_t0: float = 0.0  # video time (s) of the demo's t = 0: demo and step times start at the first tracked frame
 
 
 # ---------------------------------------------------------------- detectors
@@ -305,7 +306,7 @@ def frames_to_demo(frames: list[ArmFrame], chain: SerialChain, cfg: PoseConfig |
     n = len(frames)
     t = np.array([f.t for f in frames])
     has_pose = np.array([f.pose_world is not None for f in frames])
-    has_hand = np.array([f.hand_world is not None for f in frames])
+    has_hand = np.array([f.hand_world is not None and f.pose_world is not None for f in frames])
     metric = markers is not None
     if has_pose.sum() < 5:
         raise RuntimeError("No person found in the video. Film so that both shoulders and the working arm are visible.")
@@ -403,7 +404,8 @@ def frames_to_demo(frames: list[ArmFrame], chain: SerialChain, cfg: PoseConfig |
         row["grip"] = int(grip[i])
         row.update({f"robot_{a}": round(float(v), 4) for a, v in zip("xyz", pos[i])})
         rows.append(row)
-    return PoseResult(demo=demo, arm_rows=rows, warnings=warnings, mode="table-marker" if metric else "body", scale=float(scale))
+    return PoseResult(demo=demo, arm_rows=rows, warnings=warnings, mode="table-marker" if metric else "body", scale=float(scale),
+                      video_t0=float(t_out[0]))
 
 
 # ---------------------------------------------------------------- steps (what the operator did, in order)
@@ -461,5 +463,6 @@ def video_to_demo(video: Path, out_dir: Path, chain: SerialChain, cfg: PoseConfi
         w = csv.DictWriter(f, fieldnames=list(res.arm_rows[0].keys()))
         w.writeheader()
         w.writerows(res.arm_rows)
-    (out_dir / "steps.json").write_text(json.dumps({"video": video.name, "mode": res.mode, "arm": cfg.arm, "steps": steps}, indent=2))
+    (out_dir / "steps.json").write_text(json.dumps({"video": video.name, "mode": res.mode, "arm": cfg.arm,
+                                                      "video_t0": round(res.video_t0, 3), "steps": steps}, indent=2))
     return res, steps

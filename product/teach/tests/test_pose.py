@@ -94,3 +94,28 @@ def test_manual_grip_times_and_trim_override_the_detector(chain):
     res = pose.frames_to_demo(frames, chain, cfg)
     assert res.demo.t[-1] == pytest.approx(8.0, abs=0.05)
     assert [s["step"] for s in pose.segment_steps(res.demo)] == ["reach", "grasp", "move", "release", "retreat"]
+
+
+def test_step_times_carry_their_offset_in_the_video(chain):
+    """Steps count from the first tracked frame. video_t0 says where that is in the video,
+    so the labeller looks at the right frames after a trim or a late start."""
+    from taskprog.label import frame_times
+
+    frames = synthetic_operator_frames()
+    res = pose.frames_to_demo(frames, chain, pose.PoseConfig(t_start=2.0))
+    assert res.video_t0 == pytest.approx(2.0, abs=0.05)
+    steps = pose.segment_steps(res.demo)
+    grasp = next(s for s in steps if s["step"] == "grasp")
+    (i, t), = [x for x in frame_times(steps, res.video_t0) if x[0] == steps.index(grasp)]
+    assert t == pytest.approx(grasp["t_start"] + res.video_t0, abs=0.01)
+    assert t == pytest.approx(2.55, abs=0.1)  # the made-up operator closes the hand 2.5 s into the video
+
+
+def test_hand_seen_only_without_the_arm_is_a_clear_error(chain):
+    frames = synthetic_operator_frames()
+    for f in frames[5:]:
+        f.pose_world = None
+    for f in frames[:5]:
+        f.hand_world = None
+    with pytest.raises(RuntimeError, match="No hand found"):
+        pose.frames_to_demo(frames, chain)

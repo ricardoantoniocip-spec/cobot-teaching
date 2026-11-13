@@ -73,10 +73,12 @@ Steps from the tracker:
 """
 
 
-def frame_times(steps: list[dict]) -> list[tuple[int, float]]:
+def frame_times(steps: list[dict], video_t0: float = 0.0) -> list[tuple[int, float]]:
+    """Video times to look at for each step. Step times count from the first tracked frame;
+    video_t0 (in steps.json) is where that frame sits in the video."""
     out = []
     for i, s in enumerate(steps):
-        a, b = float(s["t_start"]), float(s["t_end"])
+        a, b = float(s["t_start"]) + video_t0, float(s["t_end"]) + video_t0
         ts = [a] if b - a < 0.2 else [a, (a + b) / 2, b]
         out += [(i, round(t, 2)) for t in ts]
     return out
@@ -110,7 +112,7 @@ def _steps_text(steps: list[dict]) -> str:
 def write_frames(video: Path, steps_doc: dict, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     steps = steps_doc["steps"]
-    for i, t, jpg in grab_frames(video, frame_times(steps)):
+    for i, t, jpg in grab_frames(video, frame_times(steps, float(steps_doc.get("video_t0", 0.0)))):
         (out_dir / f"step{i}_t{t:05.2f}.jpg").write_bytes(jpg)
     (out_dir / "prompt.txt").write_text(PROMPT.format(steps=_steps_text(steps)) + "\nAnswer as JSON in this shape:\n" + json.dumps(LABELS_SCHEMA, indent=2))
     return out_dir
@@ -121,7 +123,7 @@ def label(video: Path, steps_doc: dict, model: str = MODEL) -> dict:
 
     steps = steps_doc["steps"]
     content: list[dict] = []
-    for i, t, jpg in grab_frames(video, frame_times(steps)):
+    for i, t, jpg in grab_frames(video, frame_times(steps, float(steps_doc.get("video_t0", 0.0)))):
         content.append({"type": "text", "text": f"step {i} ({steps[i]['step']}), t = {t:.2f} s"})
         content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.standard_b64encode(jpg).decode()}})
     content.append({"type": "text", "text": PROMPT.format(steps=_steps_text(steps))})

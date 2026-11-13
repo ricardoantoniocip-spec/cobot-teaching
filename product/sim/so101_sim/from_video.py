@@ -48,8 +48,9 @@ def _in_tested_area(xy: np.ndarray) -> bool:
 
 
 def next_episode_path(folder: Path) -> Path:
-    n = len(list(folder.glob("episode_*.npz")))
-    return folder / f"episode_{n:03d}.npz"
+    """One past the highest number in the folder, so a deleted episode never gets another one overwritten."""
+    used = [int(p.stem.split("_")[1]) for p in folder.glob("episode_*.npz") if p.stem.split("_")[1].isdigit()]
+    return folder / f"episode_{max(used, default=-1) + 1:03d}.npz"
 
 
 def demo_to_episode(demo: HandDemo, steps: list[dict], out_dir: Path, episodes_dir: Path, use: str = "steps", video: bool = True) -> VideoEpisode:
@@ -100,7 +101,34 @@ def parse_grips(text: str | None) -> list[tuple[float, float]] | None:
     """'3.0-8.5' or '3.0-8.5,12-15': seconds where the hand holds the part (close-open)."""
     if not text:
         return None
-    return [tuple(float(v) for v in part.split("-")) for part in text.split(",")]
+    out = []
+    for part in text.split(","):
+        try:
+            close, open_ = (float(v) for v in part.split("-"))
+        except ValueError:
+            raise ValueError(f"--grips '{part}': write seconds as GRASP-RELEASE, e.g. 3.0-8.5 (or 'object')") from None
+        if not 0 <= close < open_:
+            raise ValueError(f"--grips '{part}': the release must come after the grasp")
+        out.append((close, open_))
+    return out
+
+
+def grips_from_object(video: Path, out_dir: Path, start: float | None, end: float | None) -> list[tuple[float, float]]:
+    """Grasp and release times from the object's motion in the video (retarget.object_motion).
+    For hands that hide the pinch, like a whole-hand grip on a carton. Raises NoObjectMotion."""
+    from retarget.object_motion import debug_image, find_object_motion, read_small
+
+    t0 = start or 0.0
+    frames, fps, scale = read_small(video, t0, end)
+    m = find_object_motion(frames, fps, scale)
+    m.t_grasp += t0
+    m.t_release += t0
+    for note in m.notes:
+        print("  note:", note)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    debug_image(video, m, out_dir / "object_motion.jpg")
+    print(f"  grasp at {m.t_grasp:.2f} s, release at {m.t_release:.2f} s (match {m.match:.2f}). Check {out_dir / 'object_motion.jpg'}")
+    return [(m.t_grasp, m.t_release)]
 
 
 def from_video(video: Path, out: Path, arm: str = "right", use: str = "steps", markers: Path | None = None, camera: Path | None = None,
@@ -109,9 +137,23 @@ def from_video(video: Path, out: Path, arm: str = "right", use: str = "steps", m
     from retarget import pose
     from retarget.video import CameraModel, MarkerSetup
 
+    from retarget.object_motion import NoObjectMotion
+
     out_dir = out / video.stem
+    try:
+        if grips == "object":
+            print("0/3 grasp and release from the object's motion")
+            events = grips_from_object(video, out_dir, start, end)
+        else:
+            events = parse_grips(grips)
+    except NoObjectMotion as e:
+        print(f"  stopped: no object motion found ({e}). Give the times by hand: --grips 3.0-8.5")
+        return 1
+    except ValueError as e:
+        print(f"  stopped: {e}")
+        return 1
     cfg = pose.PoseConfig(arm=arm, hand_width_mm=hand_width_mm, close_ratio=close_ratio, open_ratio=open_ratio,
-                          grip_events=parse_grips(grips), t_start=start, t_end=end)  # fmt: skip
+                          grip_events=events, t_start=start, t_end=end)  # fmt: skip
     print(f"1/3 tracking your {arm} arm in {video.name} (about as long as the video itself)")
     res, steps = pose.video_to_demo(video, out_dir, scripted._chain(), cfg,
                                     MarkerSetup.from_json(markers) if markers else None, CameraModel.from_json(camera) if camera else None)  # fmt: skip
@@ -125,6 +167,8 @@ def from_video(video: Path, out: Path, arm: str = "right", use: str = "steps", m
         ep = demo_to_episode(res.demo, steps, out_dir, out / "episodes", use)
     except RuntimeError as e:
         print("  stopped:", e)
+        if grips is None:
+            print("  if you gripped with the whole hand, try:  --grips object  (finds grasp and release from the object's motion)")
         return 1
     for n in ep.notes:
         print("  note:", n)

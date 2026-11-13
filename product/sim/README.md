@@ -140,6 +140,17 @@ where you reach for the camera.
 python -m so101_sim from-video my_task.mp4 --arm right --grips 3.0-8.5 --end 9.5
 ```
 
+Whole-hand grip (the pinch dot never turns red)? Let the app find the times from the object:
+
+```
+python -m so101_sim from-video my_task.mp4 --arm right --grips object
+```
+
+It looks for the object where it stood at the start, finds where it stands later, and takes the
+moments it leaves and arrives as grasp and release. Check `object_motion.jpg` in the output
+folder. Limits: one object, one move, fixed camera; if the hand hides almost nothing of the
+object, the release can be found too early. Tested on take 1's overlay video and on made-up videos.
+
 ### What the numbers mean (body mode, the default)
 
 Your shoulder is placed on the robot's shoulder and your arm is scaled to the robot's reach (about
