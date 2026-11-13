@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>How it works | Robotonic</title>
+  <meta name="claude:viewport-fit-sides" content="cover">
+  <meta name="description" content="From one video to a cobot program: record, track, label, generate, verify.">
+  <meta property="og:title" content="How it works | Robotonic">
+  <meta property="og:description" content="From one video to a cobot program: record, track, label, generate, verify.">
+  <meta property="og:image" content="assets/img/poster-ad.jpg">
+  <meta name="theme-color" content="#0f1a2a">
+  
+  <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap nav">
+      <a class="brand" href="index.html" aria-label="Robotonic home">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="1" y="1" width="30" height="30" rx="7" fill="var(--pendant)"/>
+          <path d="M8 25 L12 14 L22 10" fill="none" stroke="var(--pendant-ink)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M22 10 C26 13 26 19 22 22" fill="none" stroke="var(--pendant-dim)" stroke-width="1.4" stroke-dasharray="1.6 2.2" stroke-linecap="round"/>
+          <circle cx="12" cy="14" r="2.2" fill="var(--pendant)" stroke="var(--pendant-ink)" stroke-width="1.6"/>
+          <circle cx="22" cy="10" r="2.6" fill="var(--signal)"/>
+          <rect x="5.5" y="24.5" width="7" height="2.4" rx="1" fill="var(--pendant-ink)"/>
+        </svg>
+        <span class="brand-name">Robotonic</span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links">Menu</button>
+      <nav aria-label="Main">
+        <ul class="nav-links" id="nav-links">
+          <li><a href="how-it-works.html" aria-current="page">How it works</a></li>
+          <li><a href="service.html">Service</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a class="btn btn-signal" href="contact.html">Tell us your task</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-hero">
+      <div class="wrap">
+        <span class="eyebrow">How it works</span>
+        <h1>The operator shows. The software writes. An engineer approves.</h1>
+        <p class="lead">Five steps take a task from a video to a robot program. The AI only names what it sees. The numbers come from measurement, and the robot code comes from a fixed generator that gives the same program for the same input, every time.</p>
+      </div>
+    </section>
+
+    <section class="section" style="padding-top:0">
+      <div class="wrap">
+        <div class="media-frame">
+          <video controls preload="metadata" playsinline poster="assets/img/poster-explainer.jpg" width="1280" height="720">
+            <source src="assets/video/video-to-ur-program.mp4" type="video/mp4">
+          </video>
+        </div>
+        <p class="caption">Take 1, start to finish: webcam video, AI step labels, task file, URScript on a simulated UR5e, and the same task on the SO-101 digital twin. 52 seconds, no sound.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap">
+        <article class="detail-step">
+          <span class="num">01</span>
+          <div class="stack">
+            <h2 style="font-size:var(--step-2)">Record</h2>
+            <p>An operator does the task once, at normal speed, in front of an ordinary webcam. No markers, gloves or special suit are needed for the first version.</p>
+            <ul class="checklist">
+              <li>One take is enough for simple pick-and-place</li>
+              <li>The person who does the job every day is the teacher</li>
+            </ul>
+          </div>
+          <figure class="figure" style="margin:0">
+            <img src="assets/img/demo-tracked.jpg" alt="Webcam frame of a person moving a carton, with tracked shoulder, elbow and wrist drawn as lines" width="1280" height="720" loading="lazy">
+          </figure>
+        </article>
+
+        <article class="detail-step">
+          <span class="num">02</span>
+          <div class="stack">
+            <h2 style="font-size:var(--step-2)">Track</h2>
+            <p>Computer vision follows the shoulder, elbow, wrist and fingers frame by frame. Grasp and release are found from when the object starts and stops moving, which is more reliable than guessing from hand shape.</p>
+          </div>
+<pre class="codebox" aria-label="Measured steps"><span class="c"># measured from the video, millimetres</span>
+reach     t <span class="n">0.0</span> – <span class="n">3.1</span> s
+grasp     t <span class="n">3.1</span> s         at  <span class="n">176.3</span>,  <span class="n">46.1</span>
+move      t <span class="n">3.1</span> – <span class="n">8.5</span> s
+release   t <span class="n">8.5</span> s         at  <span class="n">222.7</span>, <span class="n">-72.9</span>
+retreat   t <span class="n">8.5</span> – <span class="n">9.5</span> s</pre>
+        </article>
+
+        <article class="detail-step">
+          <span class="num">03</span>
+          <div class="stack">
+            <h2 style="font-size:var(--step-2)">Label</h2>
+            <p>A vision language model looks at key frames and names each step, the object and the places involved. It also flags what a robot needs to watch out for.</p>
+            <p>It writes words, not numbers and not robot code.</p>
+          </div>
+<pre class="codebox" aria-label="AI labels"><span class="c"># written by the vision AI</span>
+grasp    <span class="s">"grip the carton near its top with the whole hand"</span>
+release  <span class="s">"let go of the carton standing on the seat"</span>
+
+<span class="c"># review notes for the engineer</span>
+<span class="s">"the seat cushion is soft: a robot placing here
+ needs a slower release"</span></pre>
+        </article>
+
+        <article class="detail-step">
+          <span class="num">04</span>
+          <div class="stack">
+            <h2 style="font-size:var(--step-2)">Generate</h2>
+            <p>Positions and labels are combined into a small task file: objects, locations and skills such as pick, place, wait for a signal and repeat. It describes what to do, for any robot brand.</p>
+            <p>A fixed generator turns the task file into the robot's native program, with comments an engineer can follow. To change the task you change the task file and generate again.</p>
+          </div>
+          <div class="stack" style="gap:16px">
+            <div>
+              <span class="codebox-label">task file</span>
+<pre class="codebox"><span class="s">"steps"</span>: [
+  {<span class="s">"do"</span>: <span class="s">"home"</span>},
+  {<span class="s">"do"</span>: <span class="s">"pick"</span>,  <span class="s">"object"</span>: <span class="s">"juice_carton"</span>, <span class="s">"at"</span>: <span class="s">"armrest"</span>},
+  {<span class="s">"do"</span>: <span class="s">"place"</span>, <span class="s">"object"</span>: <span class="s">"juice_carton"</span>, <span class="s">"at"</span>: <span class="s">"sofa_seat"</span>},
+  {<span class="s">"do"</span>: <span class="s">"home"</span>}
+]</pre>
+            </div>
+            <div>
+              <span class="codebox-label">URScript · Universal Robots</span>
+<pre class="codebox"><span class="c"># step 2/4: pick juice_carton at armrest</span>
+<span class="k">movej</span>(get_inverse_kin(pose_trans(loc_armrest,
+      p[0, 0, <span class="n">-0.07</span>, 0, 0, 0]), qnear=home_q))
+<span class="k">movel</span>(pose_trans(loc_armrest, p[0, 0, <span class="n">-0.02</span>, 0, 0, 0]),
+      a=<span class="n">0.8</span>, v=<span class="n">0.15</span>)  <span class="c"># down to grasp height</span>
+ct_gripper(<span class="s">True</span>, <span class="n">0.5</span>)  <span class="c"># close gripper</span></pre>
+            </div>
+          </div>
+        </article>
+
+        <article class="detail-step">
+          <span class="num">05</span>
+          <div class="stack">
+            <h2 style="font-size:var(--step-2)">Verify</h2>
+            <p>Every program runs in simulation before a real robot moves. For UR cobots that is URSim, the official offline simulator, where each step is checked against the task file. A digital twin of the SO-101 research arm replays the same task.</p>
+            <p>Programs are marked <span class="mono">NOT APPROVED</span> until an engineer has run them in simulation and then on the robot at reduced speed.</p>
+          </div>
+          <div class="stack" style="gap:12px">
+            <figure class="figure" style="margin:0"><img src="assets/img/ursim.jpg" alt="URSim screen showing a simulated UR5e with tool position and joint angles" width="808" height="530" loading="lazy"></figure>
+            <figure class="figure" style="margin:0"><img src="assets/img/twin.jpg" alt="A yellow SO-101 robot arm in a MuJoCo simulation placing a blue block on a green target" width="960" height="540" loading="lazy"></figure>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Why it is built this way</span>
+          <h2>AI where it helps. Fixed rules where it matters.</h2>
+        </div>
+        <div class="cols-3">
+          <div class="cell"><span class="tag">Predictable</span><h3>Same input, same program</h3><p>The AI never writes free-form robot code. A deterministic generator does, so results can be checked and repeated.</p></div>
+          <div class="cell"><span class="tag">Readable</span><h3>Native code, your controller</h3><p>The output is the robot's own language with step comments, ready to open, review and adjust on the teach pendant.</p></div>
+          <div class="cell"><span class="tag">Safe by process</span><h3>An engineer stays in charge</h3><p>Simulation first, then reduced speed with an engineer present. The cell's risk assessment stays with the integrator, as it should.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Status</span>
+          <h2>What works today, and what comes next.</h2>
+          <p class="lead">Robotonic is at prototype stage. We would rather show you exactly where it stands.</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Capability</th><th>Status</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td>Video to labelled steps</td><td><span class="state ok">Prototype</span></td><td>One webcam, arm and hand tracking, grasp and release from object motion.</td></tr>
+              <tr><td>Task file with pick, place, grids, signals, repeat</td><td><span class="state ok">Prototype</span></td><td>Covers pick-and-place, kitting trays and machine tending.</td></tr>
+              <tr><td>URScript for UR e-Series</td><td><span class="state ok">Passes in URSim</span></td><td>Demo take, kitting tray and machine tending examples.</td></tr>
+              <tr><td>SO-101 digital twin</td><td><span class="state ok">Passes in sim</span></td><td>Same task file replayed in MuJoCo.</td></tr>
+              <tr><td>Real SO-101 arm</td><td><span class="state next">Next</span></td><td>Hardware is being built.</td></tr>
+              <tr><td>Measured object size and orientation</td><td><span class="state next">Next</span></td><td>Today sizes are entered by hand and the tool always points down.</td></tr>
+              <tr><td>Real cobot in a pilot cell</td><td><span class="state next">Next</span></td><td>With the first pilot partner.</td></tr>
+              <tr><td>FANUC CRX and Doosan programs</td><td><span class="state next">Planned</span></td><td>New generators on the same task file.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap cta">
+        <h2>Have a task in mind?</h2>
+        <p class="lead">Send a short description or a phone video of the task. We will tell you honestly whether it is a good fit.</p>
+        <a class="btn btn-signal" href="contact.html">Tell us your task <span class="arrow" aria-hidden="true">→</span></a>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div style="display:grid;gap:14px">
+          <span class="brand-name">Robotonic</span>
+          <p>Teach a cobot by showing it. Software that turns an operator's demonstration into a robot program an engineer can read, check and run.</p>
+        </div>
+        <div>
+          <h4>Company</h4>
+          <ul>
+            <li><a href="how-it-works.html">How it works</a></li>
+            <li><a href="service.html">New task in a week</a></li>
+            <li><a href="about.html">About</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Talk to us</h4>
+          <ul>
+            <li><a href="contact.html">Tell us your task</a></li>
+            <li><a href="about.html#cofounder">Co-founder wanted</a></li>
+            <li><span class="muted">Eindhoven, NL · Portugal</span></li>
+          </ul>
+        </div>
+      </div>
+      <div class="legal">
+        <span>© <span data-year>2026</span> Robotonic. Early-stage startup: the product is a prototype and the results shown run in simulation.</span>
+        <span>Universal Robots, URScript, UR3e, UR5e and UR10e are trademarks of Universal Robots A/S. FANUC and Doosan are trademarks of their owners. Robotonic is independent and not affiliated with or endorsed by these companies.</span>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/main.js"></script>
+</body>
+</html>

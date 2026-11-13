@@ -1,0 +1,67 @@
+    <section class="page-hero">
+      <div class="wrap">
+        <span class="eyebrow">Contact</span>
+        <h1>Tell us your task.</h1>
+        <p class="lead">Describe one task you would like a cobot to learn. We reply with whether it is a good fit, what we would need from you and what it would take.</p>
+      </div>
+    </section>
+
+    <section class="section" style="padding-top:0">
+      <div class="wrap split" style="align-items:start">
+        <div class="stack">
+          <h3>What helps us most</h3>
+          <ul class="checklist">
+            <li>What the robot should pick, and where it should put it</li>
+            <li>How many different parts or variants there are</li>
+            <li>How often the task changes</li>
+            <li>Which robot and gripper you have, if any</li>
+            <li>A phone video of someone doing the task, if you can share one</li>
+          </ul>
+          <p class="muted" style="font-size:.9rem">This form does not store anything. It writes your message so you can send it to us.</p>
+        </div>
+
+        <form class="form-card" id="task-form" novalidate>
+          <div class="form-grid">
+            <div class="field"><label for="f-name">Name</label><input id="f-name" name="name" autocomplete="name" required placeholder="Your name"></div>
+            <div class="field"><label for="f-company">Company</label><input id="f-company" name="company" autocomplete="organization" required placeholder="Company name"></div>
+            <div class="field"><label for="f-email">Email</label><input id="f-email" name="email" type="email" autocomplete="email" required placeholder="you@company.com"></div>
+            <div class="field"><label for="f-country">Country</label>
+              <select id="f-country" name="country">
+                <option>Portugal</option><option>Netherlands</option><option>South Africa</option><option>Belgium</option><option>Germany</option><option>Spain</option><option>Other</option>
+              </select>
+            </div>
+            <div class="field"><label for="f-role">We are</label>
+              <select id="f-role" name="role">
+                <option>A system integrator</option><option>A manufacturer</option><option>A robot distributor</option><option>Research or education</option><option>Something else</option>
+              </select>
+            </div>
+            <div class="field"><label for="f-robot">Robot</label>
+              <select id="f-robot" name="robot">
+                <option>Universal Robots (UR3e / UR5e / UR10e)</option><option>Universal Robots (CB-series)</option><option>FANUC CRX</option><option>Doosan</option><option>Another brand</option><option>No robot yet</option>
+              </select>
+            </div>
+            <div class="field full"><label for="f-change">How often does the task change?</label>
+              <select id="f-change" name="change">
+                <option>Every day</option><option>Every week</option><option>Every month</option><option>A few times a year</option><option>Rarely</option>
+              </select>
+            </div>
+            <div class="field full">
+              <label for="f-task">The task</label>
+              <span class="hint">For example: pick 6 different brackets from bins and place them in a kit tray with 12 slots.</span>
+              <textarea id="f-task" name="task" required placeholder="What should the robot do?"></textarea>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-signal" type="submit">Write my message <span class="arrow" aria-hidden="true">→</span></button>
+          </div>
+          <div class="result" id="task-result" hidden>
+            <p id="task-note">Your message is ready.</p>
+            <pre id="task-text"></pre>
+            <div class="form-actions">
+              <button class="btn btn-ghost" type="button" id="task-copy">Copy message</button>
+              <a class="btn btn-signal" id="task-mail" href="#" hidden>Open in email</a>
+            </div>
+          </div>
+        </form>
+      </div>
+    </section>

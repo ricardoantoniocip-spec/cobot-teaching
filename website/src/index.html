@@ -1,0 +1,154 @@
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <span class="status-pill"><span class="dot"></span>Prototype · verified in simulation</span>
+          <h1>Show it once.<br>Your cobot <span class="sig">runs it.</span></h1>
+          <p class="lead">{BRAND} turns a short video of an operator doing a task into a cobot program your engineers can <strong>read, check and run</strong>. URScript for Universal Robots cobots today, more brands next.</p>
+          <div class="hero-actions">
+            <a class="btn btn-signal" href="contact.html">Tell us your task <span class="arrow" aria-hidden="true">→</span></a>
+            <a class="btn btn-ghost" href="how-it-works.html">See how it works</a>
+          </div>
+        </div>
+
+        <figure class="pendant" data-pendant aria-label="Demonstration: a video of a person moving a carton becomes labelled steps and then a URScript program" style="margin:0">
+          <div class="pendant-bar"><span class="live">Demo take 1</span><span>webcam · 1280×720</span></div>
+          <div class="pendant-view">
+            <img src="assets/img/demo-tracked.jpg" alt="A person moves a juice carton. Arm tracking lines and a pinch marker are drawn over the video." width="1280" height="720">
+            <div class="readout"><span data-readout>t = <b>4.1 s</b></span><span>armrest <b>176.3, 46.1</b> mm</span></div>
+          </div>
+          <div class="chips" aria-label="Steps the AI labelled">
+            <span class="chip on">reach</span><span class="chip">grasp</span><span class="chip">move</span><span class="chip">release</span><span class="chip">retreat</span>
+          </div>
+<pre class="code" aria-label="Generated URScript excerpt"><span class="ln on" data-step="0"><span class="c"># step 2/4: pick juice_carton at armrest</span></span><span class="ln on" data-step="0"><span class="k">movej</span>(get_inverse_kin(<span class="n">above</span>(loc_armrest)), v=<span class="n">1.05</span>)</span><span class="ln" data-step="1"><span class="k">movel</span>(pose_trans(loc_armrest, p[0, 0, <span class="n">-0.02</span>, 0, 0, 0]), v=<span class="n">0.15</span>)</span><span class="ln" data-step="1">ct_gripper(<span class="s">True</span>, <span class="n">0.5</span>)  <span class="c"># close gripper</span></span><span class="ln" data-step="2"><span class="k">movej</span>(get_inverse_kin(<span class="n">above</span>(loc_sofa_seat)), v=<span class="n">1.05</span>)</span><span class="ln" data-step="3">ct_gripper(<span class="s">False</span>, <span class="n">0.5</span>) <span class="c"># open gripper</span></span><span class="ln" data-step="4"><span class="k">movej</span>(home_q, a=<span class="n">2.62</span>, v=<span class="n">1.05</span>)  <span class="c"># back to home</span></span></pre>
+        </figure>
+      </div>
+    </section>
+
+    <div class="wrap"><div class="ruler" aria-hidden="true"></div></div>
+
+    <section class="section">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">The problem</span>
+          <h2>Every new task means days of robot programming.</h2>
+          <p class="lead">Cobots are easy to buy and safe to stand next to. Teaching them a new job is still slow, expert work. For factories that change products often, that is where automation stops paying off.</p>
+        </div>
+        <div class="cols-3">
+          <div class="cell">
+            <span class="tag">High mix</span>
+            <h3>Tasks change before the robot pays back</h3>
+            <p>Short runs and frequent changeovers mean the program has to be rewritten again and again.</p>
+          </div>
+          <div class="cell">
+            <span class="tag">Scarce skills</span>
+            <h3>Robot programmers are hard to find</h3>
+            <p>Integrators and small factories wait for the one person who knows the robot language.</p>
+          </div>
+          <div class="cell">
+            <span class="tag">Hidden knowledge</span>
+            <h3>The operator already knows the task</h3>
+            <p>The person on the line does the job every day. Their know-how rarely reaches the robot directly.</p>
+          </div>
+        </div>
+        <p class="statement">{BRAND} lets the person who knows the task <em>show it</em>, and turns that demonstration into a program the robot already understands.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">How it works</span>
+          <h2>From one video to a checked robot program.</h2>
+        </div>
+        <ol class="pipeline">
+          <li><h3>Record</h3><p>An operator does the task once in front of an ordinary camera.</p><span class="out">→ video</span></li>
+          <li><h3>Track</h3><p>Computer vision follows the arm and hand and finds when the part is gripped and released.</p><span class="out">→ positions in mm</span></li>
+          <li><h3>Label</h3><p>A vision AI names each step: reach, grasp, move, release.</p><span class="out">→ labelled steps</span></li>
+          <li><h3>Generate</h3><p>A fixed generator writes the robot's own program from a small task file.</p><span class="out">→ URScript</span></li>
+          <li><h3>Verify</h3><p>The program runs in a simulator first. An engineer approves it before the real robot moves.</p><span class="out">→ approved program</span></li>
+        </ol>
+        <p style="margin-top:32px"><a class="btn btn-ghost" href="how-it-works.html">The details, step by step <span class="arrow" aria-hidden="true">→</span></a></p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap split">
+        <div class="stack">
+          <span class="eyebrow">Watch the prototype</span>
+          <h2>42 seconds, from webcam to robot.</h2>
+          <p class="lead">One take of a person moving a carton. The software labels the steps, writes a URScript program and runs it on a simulated UR5e. The same task file also drives a small research arm in a digital twin.</p>
+          <p class="muted" style="font-size:.92rem">Everything in this video runs in simulation. Tests on a real arm are next.</p>
+        </div>
+        <div>
+          <div class="media-frame">
+            <video controls preload="metadata" playsinline poster="assets/img/poster-ad.jpg" width="1280" height="720">
+              <source src="assets/video/robotonic-ad.mp4" type="video/mp4">
+            </video>
+          </div>
+          <p class="caption">Prototype demo with voice-over. Sound on.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Robots</span>
+          <h2>Built for the cobots already on your floor.</h2>
+          <p class="lead">{BRAND} writes each robot's native program, so your team can open it on the robot's own controller, read it and change it. No new robot, no black box.</p>
+        </div>
+        <div class="robots">
+          <div class="robot primary">
+            <span class="state ok">Works today in simulation</span>
+            <h3>Universal Robots e-Series</h3>
+            <p class="models">UR3e · UR5e · UR10e</p>
+            <p>Generates URScript. Programs for pick-and-place, kitting trays and machine tending pass in URSim, the official UR simulator.</p>
+          </div>
+          <div class="robot">
+            <span class="state next">Planned</span>
+            <h3>FANUC CRX and Doosan</h3>
+            <p class="models">TP · DRL</p>
+            <p>The task file is robot-neutral. New brands need a new generator, not new demonstrations.</p>
+          </div>
+          <div class="robot">
+            <span class="state ok">Works today in simulation</span>
+            <h3>SO-101 research arm</h3>
+            <p class="models">MuJoCo digital twin</p>
+            <p>A low-cost open-source arm we use to test the full loop from video to motion before going to a real cobot.</p>
+          </div>
+        </div>
+        <p class="fineprint">{BRAND} is independent. We are not a partner of, or endorsed by, Universal Robots or the other brands named here.</p>
+      </div>
+    </section>
+
+    <section class="section band">
+      <div class="wrap">
+        <div class="split">
+          <div class="stack">
+            <span class="eyebrow">The first offer</span>
+            <h2>A new task in a week. One fixed price.</h2>
+            <p class="lead">For system integrators and high-mix manufacturers. <strong>We take a task from demonstration to a running, verified program in five working days</strong>, starting with kitting, pick-and-place and machine tending.</p>
+            <div class="hero-actions">
+              <a class="btn btn-signal" href="service.html">How the week works <span class="arrow" aria-hidden="true">→</span></a>
+              <a class="btn btn-ghost" href="contact.html">Become a pilot partner</a>
+            </div>
+          </div>
+          <div class="week">
+            <div class="day"><span class="d">Mon</span><b>Show</b><span>Film the task</span></div>
+            <div class="day"><span class="d">Tue</span><b>Label</b><span>Steps and task file</span></div>
+            <div class="day"><span class="d">Wed</span><b>Generate</b><span>Program and simulation</span></div>
+            <div class="day"><span class="d">Thu</span><b>Run</b><span>On your cell, slow first</span></div>
+            <div class="day"><span class="d">Fri</span><b>Hand over</b><span>Program and notes</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap cta">
+        <span class="eyebrow">Pilot partners wanted</span>
+        <h2>Which task should your cobot learn first?</h2>
+        <p class="lead">Tell us about one task that is hard to program today. We reply with what is possible, what we would need and what it would take.</p>
+        <a class="btn btn-signal" href="contact.html">Tell us your task <span class="arrow" aria-hidden="true">→</span></a>
+      </div>
+    </section>
