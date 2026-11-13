@@ -25,6 +25,7 @@ Shared facts for every agent and skill. Last updated 2026-11-13.
 - Parts for the sleeve about EUR 450-650. SO-101 pair: self-print on the Bambu, buy servos and electronics: about EUR 226 China route or EUR 376 Eckstein (hardware/so101/build-parts-list.md). Decision 2026-11-07: build the follower first (about EUR 124); leader optional later.
 - Code: product/teach/retarget turns a video (ArUco marker on the hand) or a hand-pose CSV into an SO-101 joint trajectory and replays it (README there). Not yet tested on the real arm.
 - Digital twin (2026-11-08): product/sim is a MuJoCo SO-101 with a pick-and-place table. Scripted demo -> retarget -> twin replay succeeds 20/20; episodes export to a LeRobotDataset for ACT training and `evaluate` scores a trained policy in the twin (README there). Not yet run on the laptop.
+- Video app (2026-11-12): `python -m so101_sim from-video my_task.mp4` tracks the operator's arm in a plain video (MediaPipe, CPU), maps the pinch point to SO-101 joints, replays in the twin and saves a LeRobot episode if it succeeds. Default "body mode" scales his arm to the robot (not true mm); table-marker mode gives true positions. Tested on made-up landmarks only, not yet on a real pick-and-place video (product/sim/README.md, decision 2026-11-12).
 - Patents: the broad sleeve idea is prior art. Keep methods as trade secrets, publish no method details. Possibly protectable later: calibrating the sleeve against the leader arm.
 
 ## Plan and gates

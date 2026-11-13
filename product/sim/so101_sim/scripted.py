@@ -14,7 +14,8 @@ import numpy as np
 from . import scene
 from .replay import SerialChain  # noqa: F401  (also sets up the import path to product/teach)
 from retarget.demo import HandDemo  # noqa: E402
-from retarget.kinematics import axis_angle_to_matrix, make_transform  # noqa: E402
+from retarget.kinematics import make_transform  # noqa: E402
+from retarget.kinematics import tool_down as _tool_down  # noqa: E402
 
 # Grasp geometry, measured in the twin: the tool point is the tip of the fixed finger.
 # The moving jaw is on the outer side (away from the base), so the tool point sits on the
@@ -32,12 +33,13 @@ def _chain() -> SerialChain:
 
 def tool_down(yaw: float) -> np.ndarray:
     """Tool rotation with fingers pointing straight down, jaws closing radially at angle yaw."""
-    r0 = _chain().fk(np.array([0.0, 0.1, 0.3, 0.9, 0.0]))[:3, :3]
-    z = r0[:, 2]
-    # Tilt about the base y axis so the finger axis is exactly vertical.
-    tilt = np.arctan2(z[0], -z[2])
-    r_down = axis_angle_to_matrix(np.array([0.0, 1.0, 0.0]), tilt) @ r0
-    return axis_angle_to_matrix(np.array([0.0, 0.0, 1.0]), yaw) @ r_down
+    return _tool_down(_chain(), yaw)
+
+
+def part_centre(tool_xy: np.ndarray, part_size=scene.PART_SIZE) -> np.ndarray:
+    """Inverse of grasp_point: where the part centre is when the tool point grasps at tool_xy."""
+    xy = np.asarray(tool_xy, dtype=float)[:2]
+    return xy + xy / np.linalg.norm(xy) * (part_size[0] / 2 + FINGER_HALF_THICKNESS)
 
 
 def grasp_point(part_xy: np.ndarray, part_size=scene.PART_SIZE) -> np.ndarray:

@@ -1,0 +1,358 @@
+<title>Demo Capture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+/* Layout: one phone-width column, three numbered stages (record, scan, send) then the log of sent takes. */
+:root {
+  --bg: #eef1f4; --surface: #ffffff; --ink: #14202b; --muted: #5b6b7a; --line: #d3dae1;
+  --accent: #0b5fd6; --on-accent: #ffffff;
+  --ok: #17794a; --ok-bg: #e2f3ea; --warn: #8a5a00; --warn-bg: #fbefd2; --bad: #b3261e; --bad-bg: #fbe4e2;
+  --display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f151b; --surface: #18212a; --ink: #e8eef3; --muted: #9aa9b7; --line: #2b3844;
+  --accent: #6aa6ff; --on-accent: #08111c;
+  --ok: #6fd3a0; --ok-bg: #12301f; --warn: #f0c267; --warn-bg: #33270a; --bad: #ff9a92; --bad-bg: #3a1614;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f151b; --surface: #18212a; --ink: #e8eef3; --muted: #9aa9b7; --line: #2b3844;
+  --accent: #6aa6ff; --on-accent: #08111c;
+  --ok: #6fd3a0; --ok-bg: #12301f; --warn: #f0c267; --warn-bg: #33270a; --bad: #ff9a92; --bad-bg: #3a1614;
+  color-scheme: dark }
+
+body { background: var(--bg); color: var(--ink); font: 16px/1.5 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px; }
+.wrap { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+h1 { font: 700 26px/1.15 var(--display); margin: 0; text-wrap: balance; }
+h2 { font: 700 18px/1.2 var(--display); margin: 0; }
+p { margin: 0; }
+.lede { color: var(--muted); }
+.stage { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.stage-head { display: flex; align-items: baseline; gap: 10px; }
+.num { font: 700 14px var(--display); color: var(--accent); letter-spacing: .04em; }
+.tips { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.btn { font: 600 16px var(--body); border-radius: 10px; padding: 13px 16px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; text-align: center; min-height: 48px; }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); flex: 1 1 200px; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn:focus-visible, select:focus-visible, label.btn:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+label.btn { display: inline-flex; align-items: center; justify-content: center; }
+label.btn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+select { font: 500 16px var(--body); padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); min-height: 48px; }
+video { width: 100%; max-height: 300px; border-radius: 10px; background: #000; }
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.checks li { display: grid; grid-template-columns: 74px 1fr; gap: 10px; align-items: start; font-size: 15px; }
+.pill { font: 600 12px var(--body); letter-spacing: .05em; text-transform: uppercase; border-radius: 999px; padding: 3px 0; text-align: center; }
+.pill.ok { color: var(--ok); background: var(--ok-bg); } .pill.warn { color: var(--warn); background: var(--warn-bg); }
+.pill.bad { color: var(--bad); background: var(--bad-bg); } .pill.wait { color: var(--muted); background: var(--bg); }
+.checks small { display: block; color: var(--muted); }
+.verdict { border-radius: 10px; padding: 12px 14px; font-weight: 600; }
+.verdict.ok { color: var(--ok); background: var(--ok-bg); } .verdict.warn { color: var(--warn); background: var(--warn-bg); } .verdict.bad { color: var(--bad); background: var(--bad-bg); }
+.verdict span { display: block; font-weight: 400; margin-top: 2px; }
+.note { color: var(--muted); font-size: 14px; }
+.takes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.takes li { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.takes li:first-child { border-top: 0; }
+.takes .meta { color: var(--muted); font-size: 13px; grid-column: 1 / -1; font-variant-numeric: tabular-nums; }
+.frames { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.frames img { width: 100%; border-radius: 4px; display: block; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Demo Capture</h1>
+    <p class="lede">Film one pick and place. The video is checked on this phone before it goes to training.</p>
+  </header>
+
+  <section class="stage" aria-labelledby="h-rec">
+    <div class="stage-head"><span class="num">1</span><h2 id="h-rec">Record</h2></div>
+    <ul class="tips">
+      <li>Phone fixed on a stand. It must not move.</li>
+      <li>Shoulder, elbow, wrist and hand in view the whole time.</li>
+      <li>Grip a small part with thumb and index finger. Open your hand wide before and after.</li>
+      <li>One pick and one place on the same flat surface, 5 to 15 seconds.</li>
+      <li>Camera setting 1080p at 30 fps or lower, so the file stays under 20 MB.</li>
+    </ul>
+    <div class="row">
+      <label for="arm" class="note">Working arm</label>
+      <select id="arm"><option value="right">Right</option><option value="left">Left</option></select>
+    </div>
+    <div class="row">
+      <label class="btn primary">Record video<input id="cam" type="file" accept="video/*" capture="environment"></label>
+      <label class="btn">Choose a video<input id="pick" type="file" accept="video/*"></label>
+    </div>
+    <video id="preview" controls playsinline muted preload="auto" hidden></video>
+  </section>
+
+  <section class="stage" aria-labelledby="h-scan">
+    <div class="stage-head"><span class="num">2</span><h2 id="h-scan">Scan</h2></div>
+    <p class="note" id="scan-empty">Nothing to scan yet. After you record, this checks length, file size, light, sharpness and camera movement, then asks Claude to look at six frames for your arm, your grip and the task.</p>
+    <ul class="checks" id="checks" hidden></ul>
+    <div class="frames" id="frames" hidden></div>
+    <div class="verdict" id="verdict" hidden></div>
+    <div class="row"><button class="btn" id="rescan" hidden>Ask Claude again</button></div>
+  </section>
+
+  <section class="stage" aria-labelledby="h-send">
+    <div class="stage-head"><span class="num">3</span><h2 id="h-send">Send for training</h2></div>
+    <p class="note" id="send-note">Available once a video has been scanned.</p>
+    <div class="row"><button class="btn primary" id="send" disabled>Send video</button></div>
+  </section>
+
+  <section class="stage" aria-labelledby="h-log">
+    <div class="stage-head"><h2 id="h-log">Sent takes</h2></div>
+    <p class="note" id="log-empty">No takes sent yet. Each video you send shows up here with its scan result and what training did with it.</p>
+    <ul class="takes" id="takes"></ul>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const MAX_BYTES = 20 * 1024 * 1024;
+  const state = { file: null, checks: [], frames: [], claude: null, seconds: 0, busy: false };
+  let sample = null, assets = null, db = null, sampleImages = null;
+
+  const ready = (async () => {
+    [sample, assets, db] = await Promise.all([claude.use("sample"), claude.use("assets"), claude.use("db")].map((p) => p.catch(() => null)));
+    if (sample) sampleImages = (await sample.limits().catch(() => null))?.images ?? null;
+    if (db) watchTakes();
+    refreshSend();
+  })();
+
+  // ---------- checks
+  function setCheck(key, level, label, detail) {
+    const i = state.checks.findIndex((c) => c.key === key);
+    const c = { key, level, label, detail };
+    if (i >= 0) state.checks[i] = c; else state.checks.push(c);
+    renderChecks();
+  }
+  function renderChecks() {
+    const ul = $("checks");
+    ul.hidden = state.checks.length === 0;
+    $("scan-empty").hidden = state.checks.length > 0;
+    ul.replaceChildren(...state.checks.map((c) => {
+      const li = document.createElement("li");
+      const pill = document.createElement("span");
+      pill.className = "pill " + c.level;
+      pill.textContent = { ok: "OK", warn: "Check", bad: "Fix", wait: "…" }[c.level];
+      const text = document.createElement("div");
+      text.textContent = c.label;
+      if (c.detail) { const s = document.createElement("small"); s.textContent = c.detail; text.append(s); }
+      li.append(pill, text);
+      return li;
+    }));
+    renderVerdict();
+  }
+  function worst() {
+    if (state.checks.some((c) => c.level === "wait")) return "wait";
+    if (state.checks.some((c) => c.level === "bad")) return "bad";
+    if (state.checks.some((c) => c.level === "warn")) return "warn";
+    return state.checks.length ? "ok" : "none";
+  }
+  function renderVerdict() {
+    const v = $("verdict"), w = worst();
+    v.hidden = w === "wait" || w === "none";
+    if (v.hidden) { refreshSend(); return; }
+    v.className = "verdict " + w;
+    const head = { ok: "Usable. Send it.", warn: "Probably usable. Read the notes first.", bad: "Not usable yet. Record it again." }[w];
+    v.textContent = head;
+    if (state.claude?.tip) { const s = document.createElement("span"); s.textContent = state.claude.tip; v.append(s); }
+    refreshSend();
+  }
+  function refreshSend() {
+    const w = worst(), btn = $("send"), note = $("send-note");
+    if (!assets || !db) {
+      btn.disabled = true;
+      note.textContent = "Sending needs you to be signed in to Claude as the owner of this page. The scan still works.";
+      return;
+    }
+    const tooBig = state.file && state.file.size > MAX_BYTES;
+    btn.disabled = state.busy || !state.file || w === "wait" || w === "none" || tooBig;
+    btn.textContent = w === "bad" ? "Send anyway" : "Send video";
+    note.textContent = !state.file ? "Available once a video has been scanned."
+      : tooBig ? "This file is over 20 MB and cannot be sent. Record a shorter take or a lower resolution."
+      : w === "bad" ? "The scan found a problem. You can still send it, marked as failed scan."
+      : w === "wait" ? "Scanning…" : "The video and its scan result go to the training queue.";
+  }
+
+  // ---------- frame grabbing
+  function once(el, ev, ms) {
+    return new Promise((res, rej) => {
+      const t = setTimeout(() => { el.removeEventListener(ev, ok); rej(new Error("timeout " + ev)); }, ms);
+      const ok = () => { clearTimeout(t); res(); };
+      el.addEventListener(ev, ok, { once: true });
+    });
+  }
+  async function grabFrames(video, n) {
+    const w = 480, h = Math.round(w * video.videoHeight / video.videoWidth) || 270;
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    const ctx = cv.getContext("2d", { willReadFrequently: true });
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const t = state.seconds * (i + 0.5) / n;
+      video.currentTime = t;
+      await once(video, "seeked", 4000);
+      ctx.drawImage(video, 0, 0, w, h);
+      const px = ctx.getImageData(0, 0, w, h);
+      const blob = await new Promise((r) => cv.toBlob(r, "image/jpeg", 0.8));
+      out.push({ t, px, blob, w, h });
+    }
+    return out;
+  }
+  function gray(px) {
+    const g = new Float32Array(px.width * px.height), d = px.data;
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) g[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    return g;
+  }
+  function frameStats(frames) {
+    const gs = frames.map((f) => gray(f.px)), w = frames[0].w, h = frames[0].h;
+    const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+    const bright = mean(gs.map((g) => mean(g)));
+    // Sharpness: average size of the difference between neighbouring pixels.
+    const sharp = mean(gs.map((g) => { let s = 0, c = 0; for (let y = 1; y < h - 1; y += 2) for (let x = 1; x < w - 1; x += 2) { const i = y * w + x; s += Math.abs(4 * g[i] - g[i - 1] - g[i + 1] - g[i - w] - g[i + w]); c++; } return s / c; }));
+    // Camera movement: a fixed camera keeps at least one corner of the picture unchanged, even when
+    // the operator moves through the others. So take the quietest corner for each pair of frames.
+    const cw = Math.round(w * 0.18), ch = Math.round(h * 0.18);
+    const corners = [[0, 0], [w - cw, 0], [0, h - ch], [w - cw, h - ch]];
+    const moves = [];
+    for (let k = 1; k < gs.length; k++) {
+      moves.push(Math.min(...corners.map(([x0, y0]) => { let s = 0, c = 0; for (let y = y0; y < y0 + ch; y += 2) for (let x = x0; x < x0 + cw; x += 2) { const i = y * w + x; s += Math.abs(gs[k][i] - gs[k - 1][i]); c++; } return s / c; })));
+    }
+    return { bright, sharp, move: Math.max(...moves) };
+  }
+
+  // ---------- Claude's look at the frames
+  const PROMPT = (arm, secs) => `These are 6 frames, in time order, from a ${secs.toFixed(0)} second video. An operator films themselves doing one pick and place so that software can track their ${arm} arm (shoulder, elbow, wrist, hand) and teach a small robot arm with a two-finger gripper.
+Judge whether the video is usable. Reply with only a JSON object with these keys:
+"arm_in_view": true if the ${arm} shoulder, elbow, wrist and hand are inside the picture in every frame,
+"hand_clear": true if the hand is not hidden behind the object or the body and not badly blurred,
+"pinch_grip": true if the object is held between thumb and index finger (a whole-hand grasp around a wide object is false),
+"pick_and_place": true if the frames show an object being picked up and put down somewhere else,
+"flat_surface": true if pick and place happen on the same flat surface such as a table,
+"light_ok": true if the scene is bright enough to see the hand clearly,
+"usable": true only if arm_in_view, hand_clear and pick_and_place are all true,
+"tip": one short plain sentence telling the operator the single most useful thing to change next time, or "" if nothing.`;
+  const CLAUDE_ROWS = [
+    ["arm_in_view", "bad", "Whole arm in view", "Shoulder, elbow, wrist or hand leaves the picture."],
+    ["hand_clear", "bad", "Hand clearly visible", "The hand is hidden or blurred."],
+    ["pick_and_place", "bad", "A pick and a place are shown", "No clear pick up and put down."],
+    ["pinch_grip", "warn", "Thumb and index grip", "Whole-hand grasp: the grip times will have to be set by hand."],
+    ["flat_surface", "warn", "Same flat surface", "Pick and place are at different heights."],
+    ["light_ok", "warn", "Enough light", "Too dark to see the hand well."],
+  ];
+  async function askClaude() {
+    $("rescan").hidden = true;
+    if (!sample || !sampleImages) { setCheck("claude", "warn", "Claude's look at the frames", "Not available in this view. Open the page signed in to Claude."); return; }
+    setCheck("claude", "wait", "Claude is looking at six frames", "Usually 10 to 40 seconds. The first time, Claude asks your permission.");
+    try {
+      const imgs = state.frames.slice(0, sampleImages.maxCount).map((f) => f.blob);
+      const r = await sample.json(PROMPT($("arm").value, state.seconds), { images: imgs, modelTier: "default" });
+      state.claude = r && typeof r === "object" ? r : {};
+      state.checks = state.checks.filter((c) => c.key !== "claude");
+      for (const [key, level, label, why] of CLAUDE_ROWS) {
+        if (typeof state.claude[key] !== "boolean") continue;
+        setCheck("c_" + key, state.claude[key] ? "ok" : level, label, state.claude[key] ? "" : why);
+      }
+      renderChecks();
+    } catch (e) {
+      const why = { not_granted: "You did not allow it. The other checks still count.", rate_limited: "Claude is busy. Try again in a minute.", images_unavailable: "This view cannot send images to Claude." }[e?.code] || "Claude could not answer. Try again.";
+      setCheck("claude", "warn", "Claude's look at the frames", why);
+      $("rescan").hidden = e?.code === "not_granted";
+    }
+  }
+
+  // ---------- scan a chosen file
+  async function scan(file) {
+    await ready;
+    state.file = file; state.checks = []; state.frames = []; state.claude = null;
+    $("frames").hidden = true; $("verdict").hidden = true;
+    const video = $("preview");
+    if (video.src) URL.revokeObjectURL(video.src);
+    video.src = URL.createObjectURL(file); video.hidden = false; video.load();
+
+    const mb = file.size / 1048576;
+    setCheck("size", file.size > MAX_BYTES ? "bad" : "ok", `File size ${mb.toFixed(1)} MB`, file.size > MAX_BYTES ? "Over the 20 MB limit. Record shorter, or set the camera to 1080p at 30 fps or 720p." : "");
+    setCheck("len", "wait", "Reading the video", "");
+    try {
+      if (video.readyState < 1) await once(video, "loadedmetadata", 8000);
+      if (!isFinite(video.duration)) { video.currentTime = 1e6; await once(video, "seeked", 4000).catch(() => {}); }
+      state.seconds = video.duration;
+    } catch { setCheck("len", "bad", "This phone could not open the video", "Try recording again."); return; }
+    const s = state.seconds;
+    setCheck("len", s < 4 ? "bad" : s > 20 ? "warn" : "ok", `Length ${s.toFixed(1)} s`, s < 4 ? "Too short for a pick and place. Aim for 5 to 15 seconds." : s > 20 ? "Long. Only one pick and place is used, so 5 to 15 seconds is enough." : "");
+    const small = Math.min(video.videoWidth, video.videoHeight);
+    setCheck("res", small < 360 ? "warn" : "ok", `Picture ${video.videoWidth} × ${video.videoHeight}`, small < 360 ? "Low resolution. The hand may be too small to track." : "");
+
+    setCheck("frames", "wait", "Looking at frames", "");
+    try {
+      await video.play().then(() => video.pause()).catch(() => {});
+      state.frames = await grabFrames(video, 6);
+      video.currentTime = 0;
+      const st = frameStats(state.frames);
+      state.checks = state.checks.filter((c) => c.key !== "frames");
+      setCheck("bright", st.bright < 45 ? "bad" : st.bright < 75 ? "warn" : "ok", "Light", st.bright < 75 ? "Dark picture. Add light or face a window." : "");
+      setCheck("sharp", st.sharp < 3 ? "warn" : "ok", "Sharpness", st.sharp < 3 ? "Soft or blurred picture. Clean the lens, add light, move a little slower." : "");
+      setCheck("steady", st.move > 6 ? "warn" : "ok", "Camera kept still", st.move > 6 ? "The background changed between frames. Put the phone on a stand." : "");
+      const box = $("frames");
+      box.replaceChildren(...state.frames.map((f) => { const im = new Image(); im.src = URL.createObjectURL(f.blob); im.alt = `Frame at ${f.t.toFixed(1)} s`; return im; }));
+      box.hidden = false;
+    } catch {
+      setCheck("frames", "warn", "Could not read frames on this phone", "Light, sharpness and Claude's look were skipped. You can still send the video.");
+      return;
+    }
+    await askClaude();
+  }
+  for (const id of ["cam", "pick"]) $(id).addEventListener("change", (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) scan(f); });
+  $("rescan").addEventListener("click", askClaude);
+
+  // ---------- send
+  const SEND_ERRORS = { too_large: "The file is over 20 MB. Record a shorter take.", unsupported_type: "This video format was refused. Set the iPhone camera to Most Compatible (Settings, Camera, Formats) and record again.", quota_or_state: "Storage for this page is full. Ask Claude to clear the processed takes.", rate_limited: "Too many uploads at once. Wait a minute and try again." };
+  $("send").addEventListener("click", async () => {
+    if (!state.file || state.busy) return;
+    state.busy = true; refreshSend();
+    $("send").textContent = "Sending…"; $("send-note").textContent = "Uploading. Keep this page open.";
+    let message;
+    try {
+      // iPhone videos are .mov files. They hold the same kind of data as .mp4, which is the type the store accepts.
+      const type = state.file.type === "video/webm" ? "video/webm" : "video/mp4";
+      const up = await assets.upload(state.file, { type });
+      await db.collection("takes").add({
+        asset: up.id, name: state.file.name || "video", sizeBytes: up.sizeBytes, seconds: Math.round(state.seconds * 10) / 10,
+        arm: $("arm").value, scan: worst(), checks: state.checks.map(({ key, level, label }) => ({ key, level, label })),
+        tip: state.claude?.tip || "", sentAt: new Date().toISOString(), status: "sent",
+      });
+      state.file = null; state.checks = []; state.frames = []; state.claude = null;
+      $("preview").hidden = true; $("frames").hidden = true; renderChecks();
+      message = "Sent. Record the next take with the part in a different place.";
+    } catch (e) {
+      message = SEND_ERRORS[e?.code] || "Sending failed. Check your connection and try again.";
+    }
+    state.busy = false; refreshSend();
+    $("send-note").textContent = message;
+  });
+
+  // ---------- log of sent takes
+  function watchTakes() {
+    const STATUS = { sent: "Waiting for training", tracked: "Arm tracked", episode: "Training episode saved", failed: "Could not be used" };
+    const giveUp = setTimeout(() => { $("log-empty").textContent = "The list of sent takes could not be loaded. Sending still works."; }, 10000);
+    db.collection("takes").orderBy("sentAt", "desc").limit(50).onSnapshot((snap) => {
+      clearTimeout(giveUp);
+      const docs = snap.docs || [];
+      $("log-empty").hidden = docs.length > 0;
+      $("takes").replaceChildren(...docs.map((d) => {
+        const t = d.data() || {}, li = document.createElement("li");
+        const name = document.createElement("span"); name.textContent = STATUS[t.status] || String(t.status || "");
+        const pill = document.createElement("span"); pill.className = "pill " + (["ok", "warn", "bad"].includes(t.scan) ? t.scan : "wait"); pill.style.padding = "3px 10px";
+        pill.textContent = { ok: "Scan OK", warn: "Scan: check", bad: "Scan failed" }[t.scan] || "No scan";
+        const meta = document.createElement("span"); meta.className = "meta";
+        const when = t.sentAt ? new Date(t.sentAt).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+        meta.textContent = [when, t.arm ? t.arm + " arm" : "", t.seconds ? t.seconds + " s" : "", t.sizeBytes ? (t.sizeBytes / 1048576).toFixed(1) + " MB" : "", t.result || ""].filter(Boolean).join(" · ");
+        li.append(name, pill, meta);
+        return li;
+      }));
+    }, () => { clearTimeout(giveUp); });
+  }
+})();
+</script>

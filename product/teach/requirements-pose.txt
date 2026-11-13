@@ -1,0 +1,2 @@
+# Only for arm tracking from a plain video (retarget pose, so101_sim from-video). CPU only.
+mediapipe>=0.10.14

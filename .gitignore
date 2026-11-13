@@ -5,3 +5,5 @@ product/sim/so101_model/
 sim_data/
 outputs/
 *.mp4
+product/teach/models/
+video_data/

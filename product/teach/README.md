@@ -16,6 +16,7 @@ video (or sleeve)  ->  hand pose + grip  ->  tool pose  ->  IK  ->  joint trajec
 |---|---|---|
 | `example OUT.csv` | Makes a synthetic pick-and-place hand demo | No |
 | `video VIDEO markers.json OUT.csv` | Tracks an ArUco marker on the back of the hand against a table marker | No |
+| `pose VIDEO OUT_DIR` | Tracks your arm in a plain video (MediaPipe, no markers on you). Easiest through `so101_sim from-video`, see product/sim/README.md | No |
 | `convert DEMO.csv OUT.csv` | Hand path to SO-101 joint angles (IK from the official URDF), smooths, caps speed, reports reachability | No |
 | `check --port COM5` | Reads the arm's joints and prints where the code thinks the gripper tip is | Yes |
 | `replay TRAJ.csv --port COM5` | Plays the trajectory, slowly, after you type `yes` | Yes |
