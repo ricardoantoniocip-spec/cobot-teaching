@@ -1,0 +1,36 @@
+{
+  "format": "cobot-task/0.2",
+  "name": "fill_kit_tray",
+  "description": "Take six parts from the feeder and put one in every slot of a 3 x 2 kit tray.",
+  "units": {"length": "mm", "angle": "deg", "time": "s"},
+  "source": {"made_by": "written by hand as the 0.2 kitting example, not from a demo"},
+  "objects": {
+    "part": {"size_mm": [30, 30, 40], "grasp_height_mm": 25, "description": "small block, stands upright"}
+  },
+  "locations": {
+    "feeder": {"xyz_mm": [100, -250, 0], "note": "the feeder always presents the next part here"},
+    "tray": {
+      "xyz_mm": [150, 100, 0],
+      "note": "slot 1 = corner nearest the robot",
+      "grid": {"count": [3, 2], "pitch_mm": [60, 60]}
+    }
+  },
+  "defaults": {"approach_mm": 60, "travel_height_mm": 120, "grip_time_s": 0.4, "speed": "normal"},
+  "steps": [
+    {"do": "home"},
+    {
+      "do": "repeat",
+      "times": 6,
+      "label": "one part per tray slot",
+      "steps": [
+        {"do": "pick", "object": "part", "at": "feeder", "label": "take the next part"},
+        {"do": "place", "object": "part", "at": "tray", "slot": "next", "speed": "slow", "label": "put it in the next free slot"}
+      ]
+    },
+    {"do": "home"}
+  ],
+  "review": [
+    "Example positions and sizes, not measured on a real cell.",
+    "The program does not check that the feeder has a part or that the tray is empty."
+  ]
+}

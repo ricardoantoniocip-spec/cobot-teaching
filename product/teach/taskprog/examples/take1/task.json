@@ -1,5 +1,5 @@
 {
-  "format": "cobot-task/0.1",
+  "format": "cobot-task/0.2",
   "name": "move_carton_to_seat",
   "description": "Pick the juice carton up from the sofa armrest and put it down on the sofa seat.",
   "units": {

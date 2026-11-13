@@ -7,6 +7,10 @@
   place O at L joint move above L, straight line down to grasp height + release gap,
                open, wait, straight line back up
   wait  s      wait s seconds
+  set_output   set a named signal (optionally as a pulse)
+  wait_input   wait until a named signal has the value, stop the program after the timeout
+
+A step at a grid location works at one slot; the motion's location is then "tray_s3".
 
 Every motion keeps the location name and the height above it, so a code generator can write
 `pose_trans(loc_bin_a, p[0, 0, -0.05, 0, 0, 0])` instead of bare numbers, and an engineer can
@@ -24,7 +28,7 @@ from .task import Cell, Location, Task
 
 @dataclass
 class Motion:
-    kind: str  # "joints", "ptp" (joint move to a pose), "line", "grip", "wait"
+    kind: str  # "joints", "ptp" (joint move to a pose), "line", "grip", "wait", "output", "input"
     step: int  # task step id
     note: str  # one line for the program comment
     speed: str
@@ -33,7 +37,9 @@ class Motion:
     pose: np.ndarray | None = None  # 4x4 tool pose in the robot base frame (metres)
     joints: np.ndarray | None = None  # radians, for kind "joints"
     close: bool | None = None  # for kind "grip"
-    seconds: float = 0.0  # for "grip" (settle time) and "wait"
+    seconds: float = 0.0  # "grip" (settle time), "wait", "output" (pulse, 0 = none), "input" (timeout)
+    signal: str | None = None  # for "output" and "input"
+    value: bool = True
 
 
 def rot_z(a: float) -> np.ndarray:
@@ -69,10 +75,9 @@ def raise_pose(pose: np.ndarray, height_m: float) -> np.ndarray:
 
 def make_plan(task: Task, cell: Cell) -> list[Motion]:
     out: list[Motion] = []
-    base = {name: location_pose(loc, cell) for name, loc in task.locations.items()}
 
     def at(kind: str, s, loc: str, h: float, note: str, speed: str) -> Motion:
-        return Motion(kind, s.id, note, speed, loc, h, raise_pose(base[loc], h))
+        return Motion(kind, s.id, note, speed, loc, h, raise_pose(location_pose(task.target(s), cell), h))
 
     # Start known: open gripper at home.
     out.append(Motion("joints", 0, "start at home", task.speed, joints=np.radians(cell.home_joints_deg)))
@@ -83,9 +88,15 @@ def make_plan(task: Task, cell: Cell) -> list[Motion]:
             out.append(Motion("joints", s.id, "home", sp, joints=np.radians(cell.home_joints_deg)))
         elif s.do == "move":
             h = (s.height_mm or task.travel_height_mm) / 1000.0
-            out.append(at("ptp", s, s.at, h, f"above {s.at}", sp))
+            out.append(at("ptp", s, task.target(s).name, h, f"above {where(s)}", sp))
         elif s.do == "wait":
             out.append(Motion("wait", s.id, f"wait {s.seconds:g} s", sp, seconds=s.seconds))
+        elif s.do == "set_output":
+            note = f"{s.signal} {'on' if s.value else 'off'}" + (f" for {s.pulse_s:g} s" if s.pulse_s else "")
+            out.append(Motion("output", s.id, note, sp, signal=s.signal, value=s.value, seconds=s.pulse_s or 0.0))
+        elif s.do == "wait_input":
+            note = f"wait for {s.signal} {'on' if s.value else 'off'}, at most {s.timeout_s:g} s"
+            out.append(Motion("input", s.id, note, sp, signal=s.signal, value=s.value, seconds=s.timeout_s))
         elif s.do in ("pick", "place"):
             obj = task.objects[s.obj]
             grasp = obj.grasp_height_mm / 1000.0
@@ -93,9 +104,14 @@ def make_plan(task: Task, cell: Cell) -> list[Motion]:
                 grasp += cell.release_gap_mm / 1000.0
             app = (s.approach_mm or task.approach_mm) / 1000.0
             verb = "grasp" if s.do == "pick" else "release"
-            out.append(at("ptp", s, s.at, grasp + app, f"above {s.at}", sp))
-            out.append(at("line", s, s.at, grasp, f"down to {verb} height", sp))
+            loc = task.target(s).name
+            out.append(at("ptp", s, loc, grasp + app, f"above {where(s)}", sp))
+            out.append(at("line", s, loc, grasp, f"down to {verb} height", sp))
             out.append(Motion("grip", s.id, "close gripper" if s.do == "pick" else "open gripper", sp,
                               close=(s.do == "pick"), seconds=task.grip_time_s))
-            out.append(at("line", s, s.at, grasp + app, f"back up from {s.at}", sp))
+            out.append(at("line", s, loc, grasp + app, f"back up from {where(s)}", sp))
     return out
+
+
+def where(s) -> str:
+    return s.at if s.slot is None else f"{s.at} slot {s.slot}"

@@ -39,6 +39,22 @@ Honest limits of take 1:
 - The object size is the twin's 20 x 20 x 40 mm block, not the 1 l carton. Heights were flattened to one table. Positions are body-mode (scaled to the SO-101), not real millimetres.
 - So this proves the chain (demo -> task -> program -> two simulators), not that a UR would grip a carton on a sofa.
 
+## Kitting and machine tending (format 0.2), 13 Nov 2026
+
+Two examples written by hand (not from a demo) to prove the new skills:
+
+| Example | New skills | URSim 5.26, UR5e |
+|---|---|---|
+| [kitting_tray](examples/kitting_tray): 6 parts from a feeder into a 3 x 2 tray | grid location, `repeat`, `"slot": "next"` | PASS: 14 steps in 63 s, every step within 0.1 mm of the plan |
+| [machine_tending](examples/machine_tending): pallet, press fixture, out pallet, 4 parts | grids, `set_output` pulse, `wait_input` with timeout | PASS with the pretend machine (cells/ur5e_tending_sim.json): 30 steps in 81 s. With a real input pin and no machine the program stops at step 6 with "cycle_done did not turn on", as it should |
+
+The slot poses are checked twice: the plan computes each slot in the work frame, the script
+derives it from the taught slot 1, and URSim's controller must land on the plan's pose.
+
+Limits: example positions, not a measured cell. No check that a part is really in the gripper
+or the feeder. The press example has no door or light-curtain signal; safety design stays with
+the integrator. On a timeout the program stops where it is and leaves outputs as they are.
+
 ## URSim on your laptop (optional, about 20 minutes)
 
 Needs Docker Desktop (Windows, WSL 2).
@@ -60,7 +76,7 @@ docker stop ursim
 
 ## Tests
 
-`python -m pytest -q tests` (38 tests, about 30 s; the twin test needs mujoco and skips without it).
+`python -m pytest -q tests` (60 tests, about 40 s; the twin test needs mujoco and skips without it).
 
 ## Demo video
 

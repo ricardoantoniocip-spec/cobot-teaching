@@ -15,6 +15,7 @@ Shared facts for every agent and skill. Last updated 2026-11-13.
 - Sell hard-to-program tasks only (varying parts, kitting, flexible parts). Simple fixed tasks are cheaper to program the normal way.
 - Stay robot-agnostic: UR, Doosan, FANUC CRX already installed at the customer.
 - How (2026-11-13): the vision LLM only names and labels demo steps; a brand-neutral task file (pick/place/move, mm) plus a cell file go through a fixed generator to URScript or an SO-101 trajectory, checked offline, in URSim and in the twin. product/teach/taskprog; take 1 passes all three. See docs/decisions/2026-11-13-task-file-then-code.md.
+- Task format 0.2 (2026-11-13): grid locations (tray, pallet), set_output, wait_input with timeout, repeat. Kitting and machine tending examples pass URSim (machine simulated). See docs/decisions/2026-11-13-grids-and-signals-in-task-file.md.
 - Requirement (2026-10-31): an LLM writes the native robot program (URScript first, then FANUC, Doosan) from the labelled demo steps, checked in sim and approved by an engineer. Learned policies only where variation needs them. See docs/decisions/2026-10-31-llm-writes-robot-programs.md.
 
 ## The product

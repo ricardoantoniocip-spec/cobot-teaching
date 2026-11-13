@@ -1,7 +1,7 @@
 # ----------------------------------------------------------------------
 # Program : move_carton_to_seat
 # Task    : Pick the juice carton up from the sofa armrest and put it down on the sofa seat.
-# Made by : cobot-teaching taskprog 0.1 from task.json (sha256 967dec498e37), cell ur5e_table
+# Made by : cobot-teaching taskprog 0.2 from task.json (sha256 f90cd9e5574c), cell ur5e_table
 # Status  : NOT APPROVED. Run it in URSim first, then on the robot at reduced speed with an
 #           engineer present. Do not edit by hand: change the task file and generate again.
 # Units   : metres, radians, seconds (the task file uses mm and degrees)

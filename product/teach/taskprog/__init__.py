@@ -3,4 +3,4 @@
 See TASK_FORMAT.md for the task file and README.md for the commands.
 """
 
-__version__ = "0.1"
+__version__ = "0.2"

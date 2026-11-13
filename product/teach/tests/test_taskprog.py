@@ -11,7 +11,7 @@ from taskprog.check import check, passed
 from taskprog.from_steps import steps_to_task
 from taskprog.label import LABELS_SCHEMA, frame_times
 from taskprog.plan import make_plan
-from taskprog.task import TaskError, load_cell, parse_task
+from taskprog.task import TaskError, load_cell, parse_cell, parse_task
 from taskprog.ur import URKinematics, matrix_to_rotvec, reach_check, rotvec_to_matrix, urscript
 
 HERE = Path(__file__).resolve().parents[1] / "taskprog"
@@ -252,3 +252,138 @@ def test_work_frame_behind_the_home_pose_is_flagged():
     findings = check(parse_task(take1_task()), backwards)
     assert any("odd arm posture" in f.text for f in findings)
     assert not any("odd arm posture" in f.text for f in check(parse_task(take1_task()), UR))
+
+
+# ---------------------------------------------------------------- 0.2: grids, signals, repeat
+
+EX = HERE / "examples"
+
+
+def _example(name: str) -> dict:
+    return json.loads((EX / name / "task.json").read_text())
+
+
+def _cell(name: str):
+    return parse_cell(json.loads((HERE / "cells" / f"{name}.json").read_text()))
+
+
+def test_grid_slots_fill_along_x_then_y_then_up():
+    t = _example("kitting_tray")
+    t["locations"]["tray"]["grid"] = {"count": [3, 2], "pitch_mm": [60, 50], "layers": 2, "layer_height_mm": 40}
+    t["locations"]["tray"]["yaw_deg"] = 90
+    tray = parse_task(t).locations["tray"]
+    assert tray.slot(1).xyz_mm == pytest.approx((150, 100, 0))
+    assert tray.slot(3).xyz_mm == pytest.approx((150, 220, 0))  # x of the tray points along +y at yaw 90
+    assert tray.slot(4).xyz_mm == pytest.approx((100, 100, 0))
+    assert tray.slot(12).xyz_mm == pytest.approx((100, 220, 40))
+
+
+def test_repeat_is_written_out_and_next_counts_slots():
+    task = parse_task(_example("kitting_tray"))
+    assert [s.do for s in task.steps] == ["home"] + ["pick", "place"] * 6 + ["home"]
+    assert [s.slot for s in task.steps if s.do == "place"] == [1, 2, 3, 4, 5, 6]
+    assert [s.id for s in task.steps] == list(range(1, 15))
+
+
+@pytest.mark.parametrize("edit, message", [
+    (lambda t: t["steps"][1].update(times=7), "outside 1..6"),
+    (lambda t: t["steps"][1]["steps"][1].update(slot=2), "already filled"),
+    (lambda t: t["steps"][1]["steps"][1].pop("slot"), "say which slot"),
+    (lambda t: t["steps"][1]["steps"][0].update(slot=1), "has no grid"),
+    (lambda t: t["locations"].update(tray_s2={"xyz_mm": [0, 0, 0]}), "clashes"),
+    (lambda t: t["locations"]["tray"]["grid"].update(pitch_mm=[0, 60]), "pitch cannot be 0"),
+    (lambda t: t["steps"][1]["steps"].append({"do": "repeat", "times": 2, "steps": [{"do": "home"}]}), "inside a repeat"),
+])
+def test_invalid_grids_and_repeats_are_rejected(edit, message):
+    t = _example("kitting_tray")
+    edit(t)
+    with pytest.raises(TaskError, match=message):
+        parse_task(t)
+
+
+def test_urscript_slot_poses_match_the_plan():
+    """The script derives slots from the taught slot 1; the plan computes them in the work frame.
+    Both must give the same pose (URSim checks the same thing on the controller)."""
+    from taskprog.ur import rotvec_to_matrix
+
+    t = _example("kitting_tray")
+    t["locations"]["tray"]["yaw_deg"] = 30
+    task = parse_task(t, set(UR.speeds))
+    script = urscript(task, UR)
+
+    def mat(nums):
+        m = np.eye(4)
+        m[:3, 3], m[:3, :3] = nums[:3], rotvec_to_matrix(np.array(nums[3:]))
+        return m
+
+    def nums(line):
+        return [float(v) for v in line.split("p[")[1].split("]")[0].split(",")]
+
+    lines = {ln.split("=")[0].strip(): ln for ln in script.splitlines() if ln.strip().startswith(("loc_", "work ="))}
+    base = mat(nums(lines["work"])) @ mat(nums(lines["loc_tray"]))
+    planned = {m.location: m.pose for m in make_plan(task, UR) if m.kind == "line" and m.height_m < 0.03}
+    for slot in range(1, 7):
+        got = base @ mat(nums(lines[f"loc_tray_s{slot}"]))
+        want = planned[f"tray_s{slot}"]
+        assert got[:3, 3] == pytest.approx(want[:3, 3] + [0, 0, -0.027], abs=1e-5)  # grasp 25 + gap 2 mm
+
+
+def test_example_programs_match_the_reviewed_files():
+    for name, cell, script in (("kitting_tray", UR, "fill_kit_tray.script"),
+                               ("machine_tending", _cell("ur5e_tending"), "tend_press.script")):
+        text = (EX / name / "task.json").read_text()
+        task = parse_task(json.loads(text), set(cell.speeds))
+        assert passed(check(task, cell))
+        assert urscript(task, cell, text, "task.json") == (EX / name / script).read_text()
+
+
+def test_signals_need_a_pin_in_the_cell_and_the_right_direction():
+    task = parse_task(_example("machine_tending"))
+    assert any(f.level == "ERROR" and "cycle_done" in f.text for f in check(task, UR))  # ur5e_table has no signals
+    wrong = json.loads((HERE / "cells" / "ur5e_tending.json").read_text())
+    wrong["signals"]["cycle_start"] = {"io": "standard_in", "pin": 2}
+    assert any(f.level == "ERROR" and "cycle_start" in f.text for f in check(task, parse_cell(wrong)))
+    wrong["signals"]["cycle_start"] = {"io": "tool_out", "pin": 0}
+    assert any("gripper's output pin" in f.text for f in check(task, parse_cell(wrong)))
+
+
+@pytest.mark.parametrize("edit, message", [
+    (lambda t: t["signals"].pop("cycle_done"), "not an input"),
+    (lambda t: t["signals"].update(cycle_start="input"), "not an output"),
+    (lambda t: t["steps"][1]["steps"][4].pop("timeout_s"), "missing 'timeout_s'"),
+    (lambda t: t["steps"][1]["steps"][3].update(value="yes"), "true or false"),
+])
+def test_invalid_signal_steps_are_rejected(edit, message):
+    t = _example("machine_tending")
+    edit(t)
+    with pytest.raises(TaskError, match=message):
+        parse_task(t)
+
+
+def test_wait_input_has_a_timeout_that_stops_the_program():
+    task = parse_task(_example("machine_tending"))
+    script = urscript(task, _cell("ur5e_tending"))
+    assert "while (not get_standard_digital_in(1)) and (ct_waited_s < 30):" in script
+    assert 'textmsg("CT ERROR step 6: cycle_done did not turn on within 30 s")\n    halt' in script
+    assert "SIMULATION" not in script
+
+
+def test_pretend_machine_only_in_a_simulation_cell():
+    task = parse_task(_example("machine_tending"))
+    sim = _cell("ur5e_tending_sim")
+    script = urscript(task, sim)
+    assert "thread ct_sim_machine_0():" in script and "Not for a real robot" in script
+    assert any("URSim only" in f.text for f in check(task, sim))
+    bad = json.loads((HERE / "cells" / "ur5e_tending.json").read_text())
+    bad["simulate"] = [{"when": "cycle_start", "then": "cycle_done", "after_s": 2}]
+    with pytest.raises(TaskError, match="must be mapped to an output"):
+        parse_cell(bad)
+
+
+def test_old_0_1_files_still_load():
+    t = take1_task()
+    t["format"] = "cobot-task/0.1"
+    parse_task(t)
+    cell = json.loads((HERE / "cells" / "ur5e_table.json").read_text())
+    assert cell["format"] == "cobot-cell/0.1"
+    parse_cell(cell)

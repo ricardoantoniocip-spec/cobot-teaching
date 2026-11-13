@@ -175,6 +175,8 @@ def _ursim(task, cell, program: str, host: str) -> int:
     expected = {}
     for r in rows:
         expected[r.motion.step] = r.motion.pose if r.motion.pose is not None else kin.fk(r.q)
+    if not res.finished:  # a stopped program: compare only the steps it did
+        expected = {k: v for k, v in expected.items() if k in res.step_poses}
     problems = compare(res, expected)
     for pr in problems:
         print(f"  pose: {pr}")

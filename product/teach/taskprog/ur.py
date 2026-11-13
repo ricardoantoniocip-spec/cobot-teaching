@@ -12,8 +12,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from . import __version__
-from .plan import TOOL_DOWN, Motion, make_plan, rot_z
-from .task import Cell, Task
+from .plan import TOOL_DOWN, Motion, make_plan, rot_z, where
+from .task import Cell, Task, target_name
 
 # Standard DH parameters published by Universal Robots (d1, a2, a3, d4, d5, d6), metres.
 # https://www.universal-robots.com/articles/ur/application-installation/dh-parameters-for-calculations-of-kinematics-and-dynamics/
@@ -185,12 +185,29 @@ def _q(v) -> str:
 
 def step_title(s) -> str:
     if s.do in ("pick", "place"):
-        return f"{s.do} {s.obj} at {s.at}"
+        return f"{s.do} {s.obj} at {where(s)}"
     if s.do == "move":
-        return f"move to {s.at}"
+        return f"move to {where(s)}"
     if s.do == "wait":
         return f"wait {s.seconds:g} s"
+    if s.do == "set_output":
+        return f"set {s.signal} {'on' if s.value else 'off'}" + (f" for {s.pulse_s:g} s" if s.pulse_s else "")
+    if s.do == "wait_input":
+        return f"wait for {s.signal} {'on' if s.value else 'off'}"
     return "home"
+
+
+def _io(cell: Cell, signal: str) -> tuple[str, str, int]:
+    """(read call, write function or '', pin) for a task signal on this cell."""
+    sg = cell.signals[signal]
+    bank, direction = sg.io.rsplit("_", 1)
+    read = f"get_{bank}_digital_{direction}({sg.pin})"
+    write = f"set_{bank}_digital_out" if direction == "out" else ""
+    return read, write, sg.pin
+
+
+def _bool(v: bool) -> str:
+    return "True" if v else "False"
 
 
 def urscript(task: Task, cell: Cell, task_text: str = "", task_file: str = "task.json") -> str:
@@ -209,6 +226,8 @@ def urscript(task: Task, cell: Cell, task_text: str = "", task_file: str = "task
         "# Status  : NOT APPROVED. Run it in URSim first, then on the robot at reduced speed with an",
         "#           engineer present. Do not edit by hand: change the task file and generate again.",
         "# Units   : metres, radians, seconds (the task file uses mm and degrees)",
+        *(["# WARNING : this cell SIMULATES a machine (see 'SIMULATION ONLY' below). Not for a real robot."]
+          if cell.simulate else []),
         "# " + "-" * 70,
         f"def {task.name}():",
         f"  set_tcp({_p([*(np.array(cell.tcp_mm) / 1000), 0, 0, 0])})",
@@ -226,6 +245,18 @@ def urscript(task: Task, cell: Cell, task_text: str = "", task_file: str = "task
                  *matrix_to_rotvec(rot_z(np.radians(loc.yaw_deg)) @ TOOL_DOWN)]
         note = f"  # {loc.note}" if loc.note else ""
         lines.append(f"  loc_{name} = pose_trans(work, {_p(local)}){note}")
+        if loc.grid:
+            g_ = loc.grid
+            layers = f", {g_.layers} layers of {g_.layer_height_mm:g} mm" if g_.layers > 1 else ""
+            lines.append(f"  # {name} is a grid: {g_.cols} x {g_.rows} slots, pitch {g_.pitch_mm[0]:g} x {g_.pitch_mm[1]:g} mm{layers}."
+                         f" loc_{name} is slot 1; re-teach it to move every slot.")
+            for slot in sorted({s.slot for s in task.steps if s.at == name and s.slot is not None}):
+                dx, dy, dz = loc.slot_offset_mm(slot)
+                # The location frame has the tool pointing down: its y and z are flipped.
+                off = [dx / 1000, -dy / 1000, -dz / 1000, 0, 0, 0]
+                c, r, layer = g_.index(slot)
+                lines.append(f"  loc_{target_name(name, slot)} = pose_trans(loc_{name}, {_p(off)})"
+                             f"  # column {c + 1}, row {r + 1}" + (f", layer {layer + 1}" if g_.layers > 1 else ""))
     lines += [
         "",
         f"  home_q = {_q(np.radians(cell.home_joints_deg))}",
@@ -236,6 +267,34 @@ def urscript(task: Task, cell: Cell, task_text: str = "", task_file: str = "task
         "  end",
         "",
     ]
+    used = sorted({s.signal for s in task.steps if s.signal})
+    if used:
+        lines.append("  # Signals (task name = robot I/O):")
+        for name in used:
+            sg = cell.signals[name]
+            lines.append(f"  #   {name} = {sg.io.replace('_', ' ')} {sg.pin} ({task.signals[name]})")
+        lines.append("")
+    for k, (start, done, after_s) in enumerate(cell.simulate):
+        r_start, _, _ = _io(cell, start)
+        _, w_done, pin = _io(cell, done)
+        lines += [
+            f"  # SIMULATION ONLY: a pretend machine. {after_s:g} s after {start} comes on it turns {done} on.",
+            f"  thread ct_sim_machine_{k}():",
+            "    while True:",
+            f"      if {r_start}:",
+            f"        {w_done}({pin}, False)",
+            f"        sleep({_f(after_s)})",
+            f"        {w_done}({pin}, True)",
+            f"        while {r_start}:",
+            "          sync()",
+            "        end",
+            "      end",
+            "      sync()",
+            "    end",
+            "  end",
+            f"  ct_sim_{k} = run ct_sim_machine_{k}()",
+            "",
+        ]
     by_step = {s.id: s for s in task.steps}
     current = None
     n = len(task.steps)
@@ -267,6 +326,27 @@ def urscript(task: Task, cell: Cell, task_text: str = "", task_file: str = "task
             lines.append(f"  ct_gripper({'True' if m.close else 'False'}, {_f(m.seconds)})  # {m.note}")
         elif m.kind == "wait":
             lines.append(f"  sleep({_f(m.seconds)})")
+        elif m.kind == "output":
+            _, write, pin = _io(cell, m.signal)
+            lines.append(f"  {write}({pin}, {_bool(m.value)})  # {m.note}")
+            if m.seconds:
+                lines.append(f"  sleep({_f(m.seconds)})")
+                lines.append(f"  {write}({pin}, {_bool(not m.value)})")
+        elif m.kind == "input":
+            read, _, _ = _io(cell, m.signal)
+            waiting = f"not {read}" if m.value else read
+            lines += [
+                f"  # {m.note}",
+                "  ct_waited_s = 0.0",
+                f"  while ({waiting}) and (ct_waited_s < {_f(m.seconds)}):",
+                "    sleep(0.05)",
+                "    ct_waited_s = ct_waited_s + 0.05",
+                "  end",
+                f"  if {waiting}:",
+                f'    textmsg("CT ERROR step {m.step}: {m.signal} did not turn {"on" if m.value else "off"} within {m.seconds:g} s")',
+                "    halt",
+                "  end",
+            ]
     lines.append(f'  textmsg("CT step {current} done ", get_actual_tcp_pose())')
     lines.append('  textmsg("CT program finished")')
     lines.append("end")

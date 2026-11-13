@@ -110,8 +110,10 @@ def trajectory(task: Task, cell: Cell) -> tuple[JointTrajectory, list[tuple[Moti
             for k in range(1, n + 1):
                 push(q, grip + (g_t - grip) * min(1.0, 2 * k / n), 0.0)  # move in the first half, then settle
             grip = g_t
-        elif m.kind == "wait":
-            for _ in range(int(np.ceil(m.seconds * HZ))):
+        elif m.kind in ("wait", "output", "input"):
+            # No I/O on the SO-101: a signal step is a short pause (a pulse keeps its length).
+            pause = m.seconds if m.kind == "wait" else (m.seconds if m.kind == "output" and m.seconds else 0.5)
+            for _ in range(int(np.ceil(pause * HZ))):
                 push(q, grip, 0.0)
         report.append((m, worst))
     traj = JointTrajectory(t=np.array(ts), q=np.array(qs), gripper_open=np.array(gs), pos_error_m=np.array(es))

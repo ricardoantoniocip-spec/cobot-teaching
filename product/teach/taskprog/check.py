@@ -58,6 +58,30 @@ def check(task: Task, cell: Cell) -> list[Finding]:
                 level = "ERROR" if ("reach" in row.problem or "jump" in row.problem) else "WARN"
                 out.append(Finding(level, row.motion.step, f"{row.problem} ({row.motion.note})"))
 
+    used = {s.signal: s for s in reversed(task.steps) if s.signal}
+    if cell.robot == "so101":
+        if used:
+            out.append(Finding("WARN", 0, "the SO-101 has no I/O: signal steps become short pauses"))
+    else:
+        for name, s in sorted(used.items()):
+            sg = cell.signals.get(name)
+            if sg is None:
+                out.append(Finding("ERROR", s.id, f"signal '{name}' is not in the cell's signals (which pin is it?)"))
+            elif task.signals[name] == "output" and not sg.io.endswith("_out"):
+                out.append(Finding("ERROR", s.id, f"signal '{name}' is an output in the task but the cell maps it to {sg.io}"))
+            elif task.signals[name] == "input" and sg.io.endswith("_out"):
+                out.append(Finding("WARN", s.id, f"input '{name}' reads back an output ({sg.io} {sg.pin}): fine in a simulator, not on a real cell"))
+        if cell.simulate:
+            out.append(Finding("WARN", 0, "this cell simulates a machine: the program is for URSim only"))
+        if cell.gripper.type == "digital_out":
+            for name in used:
+                sg = cell.signals.get(name)
+                if sg and sg.io == f"{cell.gripper.output}_out" and sg.pin == cell.gripper.pin:
+                    out.append(Finding("ERROR", used[name].id, f"signal '{name}' uses the gripper's output pin"))
+    waits = [s for s in task.steps if s.do == "wait_input"]
+    if waits:
+        out.append(Finding("INFO", 0, "on a timeout the program stops where it is and leaves outputs as they are"))
+
     for r in task.review:
         out.append(Finding("WARN", 0, f"review: {r}"))
     if not any(s.do == "home" for s in task.steps[-1:]):

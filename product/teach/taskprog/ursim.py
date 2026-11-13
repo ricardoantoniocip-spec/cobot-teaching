@@ -129,6 +129,8 @@ def run(host: str, program: str, timeout: float = 300.0) -> SimResult:
                         res.step_poses[int(m.group(1))] = [float(v) for v in m.group(2).split(",")]
                     if "CT program finished" in text:
                         res.finished = True
+                    if "CT ERROR" in text:
+                        res.errors.append(text)
                 elif kind in ("runtime", "error", "safety"):
                     res.errors.append(f"{kind}: {text}")
                 elif kind == "key" and ("compile" in text.lower() or "error" in text.lower()):

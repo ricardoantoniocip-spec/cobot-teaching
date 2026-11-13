@@ -1,0 +1,42 @@
+{
+  "format": "cobot-task/0.2",
+  "name": "tend_press",
+  "description": "Load a blank into the press fixture, start the cycle, wait until it is done, unload to the out pallet. Four parts.",
+  "units": {"length": "mm", "angle": "deg", "time": "s"},
+  "source": {"made_by": "written by hand as the 0.2 machine tending example, not from a demo"},
+  "objects": {
+    "blank": {"size_mm": [40, 40, 30], "grasp_height_mm": 20, "description": "square blank, gripped from above"}
+  },
+  "locations": {
+    "pallet_in": {"xyz_mm": [100, -300, 0], "note": "full at the start", "grid": {"count": [2, 2], "pitch_mm": [70, 70]}},
+    "fixture": {"xyz_mm": [300, 0, 50], "note": "press fixture, 50 mm above the table"},
+    "clear": {"xyz_mm": [150, 0, 0], "note": "safe waiting point outside the press"},
+    "pallet_out": {"xyz_mm": [100, 230, 0], "note": "empty at the start", "grid": {"count": [2, 2], "pitch_mm": [70, 70]}}
+  },
+  "signals": {"cycle_start": "output", "cycle_done": "input"},
+  "defaults": {"approach_mm": 60, "travel_height_mm": 150, "grip_time_s": 0.4, "speed": "normal"},
+  "steps": [
+    {"do": "home"},
+    {
+      "do": "repeat",
+      "times": 4,
+      "label": "one press cycle per blank",
+      "steps": [
+        {"do": "pick", "object": "blank", "at": "pallet_in", "slot": "next", "label": "take the next blank"},
+        {"do": "place", "object": "blank", "at": "fixture", "speed": "slow", "label": "load the fixture"},
+        {"do": "move", "to": "clear", "height_mm": 250, "label": "get out of the press"},
+        {"do": "set_output", "signal": "cycle_start", "pulse_s": 0.5, "label": "start the press"},
+        {"do": "wait_input", "signal": "cycle_done", "timeout_s": 30, "label": "wait for the press to finish"},
+        {"do": "pick", "object": "blank", "at": "fixture", "speed": "slow", "label": "unload the fixture"},
+        {"do": "place", "object": "blank", "at": "pallet_out", "slot": "next", "label": "put the finished part down"}
+      ]
+    },
+    {"do": "home"}
+  ],
+  "review": [
+    "Example positions, sizes and signals, not measured on a real cell.",
+    "Check with the machine builder how cycle_done behaves: it must go off when a new cycle starts.",
+    "Top-down grip only: a chuck that needs a side grip is not supported yet.",
+    "No door or light-curtain signal in this example. A real press needs the safety design done by the integrator."
+  ]
+}

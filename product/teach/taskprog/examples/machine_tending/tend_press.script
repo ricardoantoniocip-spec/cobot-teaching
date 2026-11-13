@@ -1,0 +1,292 @@
+# ----------------------------------------------------------------------
+# Program : tend_press
+# Task    : Load a blank into the press fixture, start the cycle, wait until it is done, unload to the out pallet. Four parts.
+# Made by : cobot-teaching taskprog 0.2 from task.json (sha256 89a6dbda0f2c), cell ur5e_tending
+# Status  : NOT APPROVED. Run it in URSim first, then on the robot at reduced speed with an
+#           engineer present. Do not edit by hand: change the task file and generate again.
+# Units   : metres, radians, seconds (the task file uses mm and degrees)
+# ----------------------------------------------------------------------
+def tend_press():
+  set_tcp(p[0, 0, 0.15, 0, 0, 0])
+  set_payload(1)
+
+  # Work frame: where the task's table sits in the robot base frame. Re-teach this one
+  # pose to move the whole task.
+  work = p[0.25, 0, 0, 0, 0, 0]
+
+  # Locations, in the work frame: on the surface the object stands on, tool pointing down.
+  # Heights above a location are pose_trans offsets along -tool z (straight up).
+  loc_pallet_in = pose_trans(work, p[0.1, -0.3, 0, 3.141593, 0, 0])  # full at the start
+  # pallet_in is a grid: 2 x 2 slots, pitch 70 x 70 mm. loc_pallet_in is slot 1; re-teach it to move every slot.
+  loc_pallet_in_s1 = pose_trans(loc_pallet_in, p[0, 0, 0, 0, 0, 0])  # column 1, row 1
+  loc_pallet_in_s2 = pose_trans(loc_pallet_in, p[0.07, 0, 0, 0, 0, 0])  # column 2, row 1
+  loc_pallet_in_s3 = pose_trans(loc_pallet_in, p[0, -0.07, 0, 0, 0, 0])  # column 1, row 2
+  loc_pallet_in_s4 = pose_trans(loc_pallet_in, p[0.07, -0.07, 0, 0, 0, 0])  # column 2, row 2
+  loc_fixture = pose_trans(work, p[0.3, 0, 0.05, 3.141593, 0, 0])  # press fixture, 50 mm above the table
+  loc_clear = pose_trans(work, p[0.15, 0, 0, 3.141593, 0, 0])  # safe waiting point outside the press
+  loc_pallet_out = pose_trans(work, p[0.1, 0.23, 0, 3.141593, 0, 0])  # empty at the start
+  # pallet_out is a grid: 2 x 2 slots, pitch 70 x 70 mm. loc_pallet_out is slot 1; re-teach it to move every slot.
+  loc_pallet_out_s1 = pose_trans(loc_pallet_out, p[0, 0, 0, 0, 0, 0])  # column 1, row 1
+  loc_pallet_out_s2 = pose_trans(loc_pallet_out, p[0.07, 0, 0, 0, 0, 0])  # column 2, row 1
+  loc_pallet_out_s3 = pose_trans(loc_pallet_out, p[0, -0.07, 0, 0, 0, 0])  # column 1, row 2
+  loc_pallet_out_s4 = pose_trans(loc_pallet_out, p[0.07, -0.07, 0, 0, 0, 0])  # column 2, row 2
+
+  home_q = [3.141593, -1.570796, 1.570796, -1.570796, -1.570796, 0]
+
+  def ct_gripper(close, settle_s):
+    set_tool_digital_out(0, close)
+    sleep(settle_s)
+  end
+
+  # Signals (task name = robot I/O):
+  #   cycle_done = standard in 1 (input)
+  #   cycle_start = standard out 2 (output)
+
+  # start: home, gripper open
+  movej(home_q, a=2.617994, v=1.047198)  # start at home
+  ct_gripper(False, 0.4)  # open gripper
+  textmsg("CT step 0 done ", get_actual_tcp_pose())
+
+  # step 1/30: home
+  textmsg("CT step 1 home")
+  movej(home_q, a=2.617994, v=1.047198)  # home
+  textmsg("CT step 1 done ", get_actual_tcp_pose())
+
+  # step 2/30: pick blank at pallet_in slot 1  (take the next blank)
+  textmsg("CT step 2 pick blank at pallet_in slot 1")
+  movej(get_inverse_kin(pose_trans(loc_pallet_in_s1, p[0, 0, -0.08, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above pallet_in slot 1
+  movel(pose_trans(loc_pallet_in_s1, p[0, 0, -0.02, 0, 0, 0]), a=0.8, v=0.15)  # down to grasp height
+  ct_gripper(True, 0.4)  # close gripper
+  movel(pose_trans(loc_pallet_in_s1, p[0, 0, -0.08, 0, 0, 0]), a=0.8, v=0.15)  # back up from pallet_in slot 1
+  textmsg("CT step 2 done ", get_actual_tcp_pose())
+
+  # step 3/30: place blank at fixture  (load the fixture)
+  textmsg("CT step 3 place blank at fixture")
+  movej(get_inverse_kin(pose_trans(loc_fixture, p[0, 0, -0.082, 0, 0, 0]), qnear=home_q), a=1.396263, v=0.523599)  # above fixture
+  movel(pose_trans(loc_fixture, p[0, 0, -0.022, 0, 0, 0]), a=0.3, v=0.05)  # down to release height
+  ct_gripper(False, 0.4)  # open gripper
+  movel(pose_trans(loc_fixture, p[0, 0, -0.082, 0, 0, 0]), a=0.3, v=0.05)  # back up from fixture
+  textmsg("CT step 3 done ", get_actual_tcp_pose())
+
+  # step 4/30: move to clear  (get out of the press)
+  textmsg("CT step 4 move to clear")
+  movej(get_inverse_kin(pose_trans(loc_clear, p[0, 0, -0.25, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above clear
+  textmsg("CT step 4 done ", get_actual_tcp_pose())
+
+  # step 5/30: set cycle_start on for 0.5 s  (start the press)
+  textmsg("CT step 5 set cycle_start on for 0.5 s")
+  set_standard_digital_out(2, True)  # cycle_start on for 0.5 s
+  sleep(0.5)
+  set_standard_digital_out(2, False)
+  textmsg("CT step 5 done ", get_actual_tcp_pose())
+
+  # step 6/30: wait for cycle_done on  (wait for the press to finish)
+  textmsg("CT step 6 wait for cycle_done on")
+  # wait for cycle_done on, at most 30 s
+  ct_waited_s = 0.0
+  while (not get_standard_digital_in(1)) and (ct_waited_s < 30):
+    sleep(0.05)
+    ct_waited_s = ct_waited_s + 0.05
+  end
+  if not get_standard_digital_in(1):
+    textmsg("CT ERROR step 6: cycle_done did not turn on within 30 s")
+    halt
+  end
+  textmsg("CT step 6 done ", get_actual_tcp_pose())
+
+  # step 7/30: pick blank at fixture  (unload the fixture)
+  textmsg("CT step 7 pick blank at fixture")
+  movej(get_inverse_kin(pose_trans(loc_fixture, p[0, 0, -0.08, 0, 0, 0]), qnear=home_q), a=1.396263, v=0.523599)  # above fixture
+  movel(pose_trans(loc_fixture, p[0, 0, -0.02, 0, 0, 0]), a=0.3, v=0.05)  # down to grasp height
+  ct_gripper(True, 0.4)  # close gripper
+  movel(pose_trans(loc_fixture, p[0, 0, -0.08, 0, 0, 0]), a=0.3, v=0.05)  # back up from fixture
+  textmsg("CT step 7 done ", get_actual_tcp_pose())
+
+  # step 8/30: place blank at pallet_out slot 1  (put the finished part down)
+  textmsg("CT step 8 place blank at pallet_out slot 1")
+  movej(get_inverse_kin(pose_trans(loc_pallet_out_s1, p[0, 0, -0.082, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above pallet_out slot 1
+  movel(pose_trans(loc_pallet_out_s1, p[0, 0, -0.022, 0, 0, 0]), a=0.8, v=0.15)  # down to release height
+  ct_gripper(False, 0.4)  # open gripper
+  movel(pose_trans(loc_pallet_out_s1, p[0, 0, -0.082, 0, 0, 0]), a=0.8, v=0.15)  # back up from pallet_out slot 1
+  textmsg("CT step 8 done ", get_actual_tcp_pose())
+
+  # step 9/30: pick blank at pallet_in slot 2  (take the next blank)
+  textmsg("CT step 9 pick blank at pallet_in slot 2")
+  movej(get_inverse_kin(pose_trans(loc_pallet_in_s2, p[0, 0, -0.08, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above pallet_in slot 2
+  movel(pose_trans(loc_pallet_in_s2, p[0, 0, -0.02, 0, 0, 0]), a=0.8, v=0.15)  # down to grasp height
+  ct_gripper(True, 0.4)  # close gripper
+  movel(pose_trans(loc_pallet_in_s2, p[0, 0, -0.08, 0, 0, 0]), a=0.8, v=0.15)  # back up from pallet_in slot 2
+  textmsg("CT step 9 done ", get_actual_tcp_pose())
+
+  # step 10/30: place blank at fixture  (load the fixture)
+  textmsg("CT step 10 place blank at fixture")
+  movej(get_inverse_kin(pose_trans(loc_fixture, p[0, 0, -0.082, 0, 0, 0]), qnear=home_q), a=1.396263, v=0.523599)  # above fixture
+  movel(pose_trans(loc_fixture, p[0, 0, -0.022, 0, 0, 0]), a=0.3, v=0.05)  # down to release height
+  ct_gripper(False, 0.4)  # open gripper
+  movel(pose_trans(loc_fixture, p[0, 0, -0.082, 0, 0, 0]), a=0.3, v=0.05)  # back up from fixture
+  textmsg("CT step 10 done ", get_actual_tcp_pose())
+
+  # step 11/30: move to clear  (get out of the press)
+  textmsg("CT step 11 move to clear")
+  movej(get_inverse_kin(pose_trans(loc_clear, p[0, 0, -0.25, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above clear
+  textmsg("CT step 11 done ", get_actual_tcp_pose())
+
+  # step 12/30: set cycle_start on for 0.5 s  (start the press)
+  textmsg("CT step 12 set cycle_start on for 0.5 s")
+  set_standard_digital_out(2, True)  # cycle_start on for 0.5 s
+  sleep(0.5)
+  set_standard_digital_out(2, False)
+  textmsg("CT step 12 done ", get_actual_tcp_pose())
+
+  # step 13/30: wait for cycle_done on  (wait for the press to finish)
+  textmsg("CT step 13 wait for cycle_done on")
+  # wait for cycle_done on, at most 30 s
+  ct_waited_s = 0.0
+  while (not get_standard_digital_in(1)) and (ct_waited_s < 30):
+    sleep(0.05)
+    ct_waited_s = ct_waited_s + 0.05
+  end
+  if not get_standard_digital_in(1):
+    textmsg("CT ERROR step 13: cycle_done did not turn on within 30 s")
+    halt
+  end
+  textmsg("CT step 13 done ", get_actual_tcp_pose())
+
+  # step 14/30: pick blank at fixture  (unload the fixture)
+  textmsg("CT step 14 pick blank at fixture")
+  movej(get_inverse_kin(pose_trans(loc_fixture, p[0, 0, -0.08, 0, 0, 0]), qnear=home_q), a=1.396263, v=0.523599)  # above fixture
+  movel(pose_trans(loc_fixture, p[0, 0, -0.02, 0, 0, 0]), a=0.3, v=0.05)  # down to grasp height
+  ct_gripper(True, 0.4)  # close gripper
+  movel(pose_trans(loc_fixture, p[0, 0, -0.08, 0, 0, 0]), a=0.3, v=0.05)  # back up from fixture
+  textmsg("CT step 14 done ", get_actual_tcp_pose())
+
+  # step 15/30: place blank at pallet_out slot 2  (put the finished part down)
+  textmsg("CT step 15 place blank at pallet_out slot 2")
+  movej(get_inverse_kin(pose_trans(loc_pallet_out_s2, p[0, 0, -0.082, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above pallet_out slot 2
+  movel(pose_trans(loc_pallet_out_s2, p[0, 0, -0.022, 0, 0, 0]), a=0.8, v=0.15)  # down to release height
+  ct_gripper(False, 0.4)  # open gripper
+  movel(pose_trans(loc_pallet_out_s2, p[0, 0, -0.082, 0, 0, 0]), a=0.8, v=0.15)  # back up from pallet_out slot 2
+  textmsg("CT step 15 done ", get_actual_tcp_pose())
+
+  # step 16/30: pick blank at pallet_in slot 3  (take the next blank)
+  textmsg("CT step 16 pick blank at pallet_in slot 3")
+  movej(get_inverse_kin(pose_trans(loc_pallet_in_s3, p[0, 0, -0.08, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above pallet_in slot 3
+  movel(pose_trans(loc_pallet_in_s3, p[0, 0, -0.02, 0, 0, 0]), a=0.8, v=0.15)  # down to grasp height
+  ct_gripper(True, 0.4)  # close gripper
+  movel(pose_trans(loc_pallet_in_s3, p[0, 0, -0.08, 0, 0, 0]), a=0.8, v=0.15)  # back up from pallet_in slot 3
+  textmsg("CT step 16 done ", get_actual_tcp_pose())
+
+  # step 17/30: place blank at fixture  (load the fixture)
+  textmsg("CT step 17 place blank at fixture")
+  movej(get_inverse_kin(pose_trans(loc_fixture, p[0, 0, -0.082, 0, 0, 0]), qnear=home_q), a=1.396263, v=0.523599)  # above fixture
+  movel(pose_trans(loc_fixture, p[0, 0, -0.022, 0, 0, 0]), a=0.3, v=0.05)  # down to release height
+  ct_gripper(False, 0.4)  # open gripper
+  movel(pose_trans(loc_fixture, p[0, 0, -0.082, 0, 0, 0]), a=0.3, v=0.05)  # back up from fixture
+  textmsg("CT step 17 done ", get_actual_tcp_pose())
+
+  # step 18/30: move to clear  (get out of the press)
+  textmsg("CT step 18 move to clear")
+  movej(get_inverse_kin(pose_trans(loc_clear, p[0, 0, -0.25, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above clear
+  textmsg("CT step 18 done ", get_actual_tcp_pose())
+
+  # step 19/30: set cycle_start on for 0.5 s  (start the press)
+  textmsg("CT step 19 set cycle_start on for 0.5 s")
+  set_standard_digital_out(2, True)  # cycle_start on for 0.5 s
+  sleep(0.5)
+  set_standard_digital_out(2, False)
+  textmsg("CT step 19 done ", get_actual_tcp_pose())
+
+  # step 20/30: wait for cycle_done on  (wait for the press to finish)
+  textmsg("CT step 20 wait for cycle_done on")
+  # wait for cycle_done on, at most 30 s
+  ct_waited_s = 0.0
+  while (not get_standard_digital_in(1)) and (ct_waited_s < 30):
+    sleep(0.05)
+    ct_waited_s = ct_waited_s + 0.05
+  end
+  if not get_standard_digital_in(1):
+    textmsg("CT ERROR step 20: cycle_done did not turn on within 30 s")
+    halt
+  end
+  textmsg("CT step 20 done ", get_actual_tcp_pose())
+
+  # step 21/30: pick blank at fixture  (unload the fixture)
+  textmsg("CT step 21 pick blank at fixture")
+  movej(get_inverse_kin(pose_trans(loc_fixture, p[0, 0, -0.08, 0, 0, 0]), qnear=home_q), a=1.396263, v=0.523599)  # above fixture
+  movel(pose_trans(loc_fixture, p[0, 0, -0.02, 0, 0, 0]), a=0.3, v=0.05)  # down to grasp height
+  ct_gripper(True, 0.4)  # close gripper
+  movel(pose_trans(loc_fixture, p[0, 0, -0.08, 0, 0, 0]), a=0.3, v=0.05)  # back up from fixture
+  textmsg("CT step 21 done ", get_actual_tcp_pose())
+
+  # step 22/30: place blank at pallet_out slot 3  (put the finished part down)
+  textmsg("CT step 22 place blank at pallet_out slot 3")
+  movej(get_inverse_kin(pose_trans(loc_pallet_out_s3, p[0, 0, -0.082, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above pallet_out slot 3
+  movel(pose_trans(loc_pallet_out_s3, p[0, 0, -0.022, 0, 0, 0]), a=0.8, v=0.15)  # down to release height
+  ct_gripper(False, 0.4)  # open gripper
+  movel(pose_trans(loc_pallet_out_s3, p[0, 0, -0.082, 0, 0, 0]), a=0.8, v=0.15)  # back up from pallet_out slot 3
+  textmsg("CT step 22 done ", get_actual_tcp_pose())
+
+  # step 23/30: pick blank at pallet_in slot 4  (take the next blank)
+  textmsg("CT step 23 pick blank at pallet_in slot 4")
+  movej(get_inverse_kin(pose_trans(loc_pallet_in_s4, p[0, 0, -0.08, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above pallet_in slot 4
+  movel(pose_trans(loc_pallet_in_s4, p[0, 0, -0.02, 0, 0, 0]), a=0.8, v=0.15)  # down to grasp height
+  ct_gripper(True, 0.4)  # close gripper
+  movel(pose_trans(loc_pallet_in_s4, p[0, 0, -0.08, 0, 0, 0]), a=0.8, v=0.15)  # back up from pallet_in slot 4
+  textmsg("CT step 23 done ", get_actual_tcp_pose())
+
+  # step 24/30: place blank at fixture  (load the fixture)
+  textmsg("CT step 24 place blank at fixture")
+  movej(get_inverse_kin(pose_trans(loc_fixture, p[0, 0, -0.082, 0, 0, 0]), qnear=home_q), a=1.396263, v=0.523599)  # above fixture
+  movel(pose_trans(loc_fixture, p[0, 0, -0.022, 0, 0, 0]), a=0.3, v=0.05)  # down to release height
+  ct_gripper(False, 0.4)  # open gripper
+  movel(pose_trans(loc_fixture, p[0, 0, -0.082, 0, 0, 0]), a=0.3, v=0.05)  # back up from fixture
+  textmsg("CT step 24 done ", get_actual_tcp_pose())
+
+  # step 25/30: move to clear  (get out of the press)
+  textmsg("CT step 25 move to clear")
+  movej(get_inverse_kin(pose_trans(loc_clear, p[0, 0, -0.25, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above clear
+  textmsg("CT step 25 done ", get_actual_tcp_pose())
+
+  # step 26/30: set cycle_start on for 0.5 s  (start the press)
+  textmsg("CT step 26 set cycle_start on for 0.5 s")
+  set_standard_digital_out(2, True)  # cycle_start on for 0.5 s
+  sleep(0.5)
+  set_standard_digital_out(2, False)
+  textmsg("CT step 26 done ", get_actual_tcp_pose())
+
+  # step 27/30: wait for cycle_done on  (wait for the press to finish)
+  textmsg("CT step 27 wait for cycle_done on")
+  # wait for cycle_done on, at most 30 s
+  ct_waited_s = 0.0
+  while (not get_standard_digital_in(1)) and (ct_waited_s < 30):
+    sleep(0.05)
+    ct_waited_s = ct_waited_s + 0.05
+  end
+  if not get_standard_digital_in(1):
+    textmsg("CT ERROR step 27: cycle_done did not turn on within 30 s")
+    halt
+  end
+  textmsg("CT step 27 done ", get_actual_tcp_pose())
+
+  # step 28/30: pick blank at fixture  (unload the fixture)
+  textmsg("CT step 28 pick blank at fixture")
+  movej(get_inverse_kin(pose_trans(loc_fixture, p[0, 0, -0.08, 0, 0, 0]), qnear=home_q), a=1.396263, v=0.523599)  # above fixture
+  movel(pose_trans(loc_fixture, p[0, 0, -0.02, 0, 0, 0]), a=0.3, v=0.05)  # down to grasp height
+  ct_gripper(True, 0.4)  # close gripper
+  movel(pose_trans(loc_fixture, p[0, 0, -0.08, 0, 0, 0]), a=0.3, v=0.05)  # back up from fixture
+  textmsg("CT step 28 done ", get_actual_tcp_pose())
+
+  # step 29/30: place blank at pallet_out slot 4  (put the finished part down)
+  textmsg("CT step 29 place blank at pallet_out slot 4")
+  movej(get_inverse_kin(pose_trans(loc_pallet_out_s4, p[0, 0, -0.082, 0, 0, 0]), qnear=home_q), a=2.617994, v=1.047198)  # above pallet_out slot 4
+  movel(pose_trans(loc_pallet_out_s4, p[0, 0, -0.022, 0, 0, 0]), a=0.8, v=0.15)  # down to release height
+  ct_gripper(False, 0.4)  # open gripper
+  movel(pose_trans(loc_pallet_out_s4, p[0, 0, -0.082, 0, 0, 0]), a=0.8, v=0.15)  # back up from pallet_out slot 4
+  textmsg("CT step 29 done ", get_actual_tcp_pose())
+
+  # step 30/30: home
+  textmsg("CT step 30 home")
+  movej(home_q, a=2.617994, v=1.047198)  # home
+  textmsg("CT step 30 done ", get_actual_tcp_pose())
+  textmsg("CT program finished")
+end
