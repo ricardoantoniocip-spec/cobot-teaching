@@ -103,7 +103,7 @@ def twin_frames(task_path: Path, cell_path: Path, size=(960, 540)) -> tuple[list
     renderer = mujoco.Renderer(model, size[1], size[0])
     cam = mujoco.MjvCamera()
     cam.lookat[:] = [0.2, 0.0, 0.05]
-    cam.distance, cam.azimuth, cam.elevation = 0.75, 140, -25
+    cam.distance, cam.azimuth, cam.elevation = 0.62, 140, -38
     q0, g0 = traj.sample(0.0)
     scene.set_pose(model, data, q0, g0)
     sub = max(1, round(1 / (FPS * model.opt.timestep)))
@@ -115,7 +115,9 @@ def twin_frames(task_path: Path, cell_path: Path, size=(960, 540)) -> tuple[list
         for _ in range(sub):
             mujoco.mj_step(model, data)
         renderer.update_scene(data, camera=cam)
-        out.append(cv2.cvtColor(renderer.render(), cv2.COLOR_RGB2BGR))
+        img = cv2.cvtColor(renderer.render(), cv2.COLOR_RGB2BGR)
+        img[img.max(axis=2) < 6] = (40, 28, 22)  # empty sky: dark blue instead of black
+        out.append(img)
     err = float(np.linalg.norm(data.body("part").xpos[:2] - place_xy)) * 1000
     return out, err < 30, err
 

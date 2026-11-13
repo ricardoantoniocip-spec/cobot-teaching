@@ -69,3 +69,7 @@ builds the 50-second video (operator video with labels, task file, URScript, URS
 take's own files. Take 1's video is in the project files (demo-video/). Found while recording:
 the first cell had the table behind the home pose, so the arm reached over backwards. `check`
 now warns about that posture and the example cell faces the table.
+
+`tools/make_ad_video.py` builds the 42-second ad version (animated, voice-over, music) from the
+same files. The voice lines are in `SCRIPT` at the top of that file; the take 1 voice was made
+with the open Kokoro text-to-speech model (voice af_heart), the music is synthesised in the script.
