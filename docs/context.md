@@ -1,6 +1,6 @@
 # Project context (read this first)
 
-Shared facts for every agent and skill. Last updated 2026-10-31.
+Shared facts for every agent and skill. Last updated 2026-11-13.
 
 ## Ricardo
 - Production engineer in Eindhoven, mechanical engineering background, robotics minor (kinematics, IK). Python, Lean/LSS, OEE.
@@ -14,6 +14,8 @@ Shared facts for every agent and skill. Last updated 2026-10-31.
 - Working prices (Ricardo sets the final number): EUR 7,500 per task in NL, EUR 5,000 in PT, first 3 PT pilots EUR 3,000. Support EUR 300 (NL) / EUR 200 (PT) per cell per month. Ideas from the competitor scan: a retrain price and a success clause.
 - Sell hard-to-program tasks only (varying parts, kitting, flexible parts). Simple fixed tasks are cheaper to program the normal way.
 - Stay robot-agnostic: UR, Doosan, FANUC CRX already installed at the customer.
+- How (2026-11-13): the vision LLM only names and labels demo steps; a brand-neutral task file (pick/place/move, mm) plus a cell file go through a fixed generator to URScript or an SO-101 trajectory, checked offline, in URSim and in the twin. product/teach/taskprog; take 1 passes all three. See docs/decisions/2026-11-13-task-file-then-code.md.
+- Task format 0.2 (2026-11-13): grid locations (tray, pallet), set_output, wait_input with timeout, repeat. Kitting and machine tending examples pass URSim (machine simulated). See docs/decisions/2026-11-13-grids-and-signals-in-task-file.md.
 - Requirement (2026-10-31): an LLM writes the native robot program (URScript first, then FANUC, Doosan) from the labelled demo steps, checked in sim and approved by an engineer. Learned policies only where variation needs them. See docs/decisions/2026-10-31-llm-writes-robot-programs.md.
 
 ## The product
@@ -23,6 +25,7 @@ Shared facts for every agent and skill. Last updated 2026-10-31.
 - Parts for the sleeve about EUR 450-650. SO-101 pair: self-print on the Bambu, buy servos and electronics: about EUR 226 China route or EUR 376 Eckstein (hardware/so101/build-parts-list.md). Decision 2026-11-07: build the follower first (about EUR 124); leader optional later.
 - Code: product/teach/retarget turns a video (ArUco marker on the hand) or a hand-pose CSV into an SO-101 joint trajectory and replays it (README there). Not yet tested on the real arm.
 - Digital twin (2026-11-08): product/sim is a MuJoCo SO-101 with a pick-and-place table. Scripted demo -> retarget -> twin replay succeeds 20/20; episodes export to a LeRobotDataset for ACT training and `evaluate` scores a trained policy in the twin (README there). Not yet run on the laptop.
+- Video app (2026-11-12): `python -m so101_sim from-video my_task.mp4` tracks the operator's arm in a plain video (MediaPipe, CPU), maps the pinch point to SO-101 joints, replays in the twin and saves a LeRobot episode if it succeeds. Default "body mode" scales his arm to the robot (not true mm); table-marker mode gives true positions. Tested on made-up landmarks only, not yet on a real pick-and-place video (product/sim/README.md, decision 2026-11-12).
 - Patents: the broad sleeve idea is prior art. Keep methods as trade secrets, publish no method details. Possibly protectable later: calibrating the sleeve against the leader arm.
 
 ## Plan and gates

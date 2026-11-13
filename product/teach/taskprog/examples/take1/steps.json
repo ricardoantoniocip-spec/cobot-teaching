@@ -1,0 +1,92 @@
+{
+  "video": "take1.mp4",
+  "mode": "body",
+  "arm": "right",
+  "steps": [
+    {
+      "step": "reach",
+      "t_start": 0.0,
+      "t_end": 3.067,
+      "from_xyz": [
+        0.1504,
+        -0.042,
+        -0.014
+      ],
+      "to_xyz": [
+        0.1763,
+        0.0461,
+        0.081
+      ],
+      "holding": false,
+      "label": null
+    },
+    {
+      "step": "grasp",
+      "t_start": 3.067,
+      "t_end": 3.067,
+      "from_xyz": [
+        0.1763,
+        0.0461,
+        0.081
+      ],
+      "to_xyz": [
+        0.1763,
+        0.0461,
+        0.081
+      ],
+      "holding": true,
+      "label": null
+    },
+    {
+      "step": "move",
+      "t_start": 3.067,
+      "t_end": 8.533,
+      "from_xyz": [
+        0.1763,
+        0.0461,
+        0.081
+      ],
+      "to_xyz": [
+        0.2227,
+        -0.0729,
+        0.0399
+      ],
+      "holding": true,
+      "label": null
+    },
+    {
+      "step": "release",
+      "t_start": 8.533,
+      "t_end": 8.533,
+      "from_xyz": [
+        0.2227,
+        -0.0729,
+        0.0399
+      ],
+      "to_xyz": [
+        0.2227,
+        -0.0729,
+        0.0399
+      ],
+      "holding": false,
+      "label": null
+    },
+    {
+      "step": "retreat",
+      "t_start": 8.533,
+      "t_end": 9.467,
+      "from_xyz": [
+        0.2227,
+        -0.0729,
+        0.0399
+      ],
+      "to_xyz": [
+        0.1712,
+        -0.0489,
+        0.0388
+      ],
+      "holding": false,
+      "label": null
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 
   example  OUT.csv                       write a synthetic hand demo
   video    VIDEO markers.json OUT.csv    hand demo from a video with ArUco markers
+  pose     VIDEO OUT_DIR                 hand demo from a plain video: tracks your arm, no markers on you
   convert  DEMO.csv OUT.csv              hand demo -> SO-101 joint trajectory (no robot needed)
   check    --port COM5                   read the arm's joints, print the tool pose (FK check)
   replay   TRAJ.csv --port COM5          play a trajectory on the follower (asks to confirm)
@@ -33,6 +34,14 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("out", type=Path)
     s.add_argument("--camera", type=Path, help="camera.json with fx, fy, cx, cy, dist")
     s.add_argument("--grip-events", type=Path, help="CSV with t_close,t_open per grasp")
+
+    s = sub.add_parser("pose")
+    s.add_argument("video", type=Path)
+    s.add_argument("out_dir", type=Path)
+    s.add_argument("--arm", default="right", choices=["right", "left"], help="which of your arms does the task")
+    s.add_argument("--markers", type=Path, help="markers.json: switch to table-marker mode (true scale)")
+    s.add_argument("--camera", type=Path, help="camera.json with fx, fy, cx, cy, dist")
+    s.add_argument("--hand-width-mm", type=float, help="your knuckle width, index to little finger (table-marker mode)")
 
     s = sub.add_parser("convert")
     s.add_argument("demo", type=Path)
@@ -68,6 +77,16 @@ def main(argv: list[str] | None = None) -> int:
             print("warning:", w)
         write_demo(a.out, demo)
         print(f"wrote {a.out}: {len(demo)} samples, {demo.t[-1] - demo.t[0]:.1f} s")
+    elif a.cmd == "pose":
+        from .pose import PoseConfig, video_to_demo as pose_to_demo
+        from .video import CameraModel, MarkerSetup
+
+        res, steps = pose_to_demo(a.video, a.out_dir, chain, PoseConfig(arm=a.arm, hand_width_mm=a.hand_width_mm),
+                                  MarkerSetup.from_json(a.markers) if a.markers else None, CameraModel.from_json(a.camera) if a.camera else None)  # fmt: skip
+        for w in res.warnings:
+            print("warning:", w)
+        print(f"{len(res.demo)} samples, {res.demo.t[-1]:.1f} s, mode: {res.mode}. Steps: " + " > ".join(s["step"] for s in steps))
+        print(f"wrote demo.csv, arm_track.csv, steps.json and tracked.mp4 in {a.out_dir}")
     elif a.cmd == "convert":
         cfg = RetargetConfig(max_joint_speed_rad_s=np.radians(a.max_speed_deg))
         cfg.hand_to_tool[2, 3] = a.tool_offset_z

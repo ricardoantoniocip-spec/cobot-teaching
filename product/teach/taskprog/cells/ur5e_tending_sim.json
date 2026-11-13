@@ -1,0 +1,75 @@
+{
+  "format": "cobot-cell/0.2",
+  "name": "ur5e_tending_sim",
+  "note": "URSim only. Same as ur5e_tending, but cycle_done reads back output 7 and a pretend machine in the program sets it 2 s after cycle_start. URSim inputs cannot be set from outside, so this is how the happy path is tested.",
+  "robot": "ur5e",
+  "work_frame": {
+    "xyz_mm": [
+      250,
+      0,
+      0
+    ],
+    "yaw_deg": 0
+  },
+  "tcp_mm": [
+    0,
+    0,
+    150
+  ],
+  "payload_kg": 1.0,
+  "gripper": {
+    "type": "digital_out",
+    "output": "tool",
+    "pin": 0,
+    "close_value": true
+  },
+  "home_joints_deg": [
+    180,
+    -90,
+    90,
+    -90,
+    -90,
+    0
+  ],
+  "speeds": {
+    "slow": {
+      "joint_deg_s": 30,
+      "joint_deg_s2": 80,
+      "linear_mm_s": 50,
+      "linear_mm_s2": 300
+    },
+    "normal": {
+      "joint_deg_s": 60,
+      "joint_deg_s2": 150,
+      "linear_mm_s": 150,
+      "linear_mm_s2": 800
+    }
+  },
+  "release_gap_mm": 2,
+  "min_tool_height_mm": 5,
+  "work_area_mm": [
+    -200,
+    400,
+    -400,
+    400
+  ],
+  "signals": {
+    "cycle_start": {
+      "io": "standard_out",
+      "pin": 2,
+      "note": "pulse to start the press"
+    },
+    "cycle_done": {
+      "io": "standard_out",
+      "pin": 7,
+      "note": "read back; set by the pretend machine"
+    }
+  },
+  "simulate": [
+    {
+      "when": "cycle_start",
+      "then": "cycle_done",
+      "after_s": 2.0
+    }
+  ]
+}

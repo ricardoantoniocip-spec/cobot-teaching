@@ -207,6 +207,19 @@ def solve_ik_with_restarts(
     return best
 
 
+def tool_down(chain: SerialChain, yaw: float) -> np.ndarray:
+    """Tool rotation with the fingers pointing straight down, jaws closing radially at angle yaw.
+
+    The SO-101 has 5 joints: it can only point its gripper within the vertical plane through
+    its base, so yaw should be the direction from the base to the target (atan2(y, x)).
+    """
+    r0 = chain.fk(np.array([0.0, 0.1, 0.3, 0.9, 0.0]))[:3, :3]
+    z = r0[:, 2]
+    tilt = np.arctan2(z[0], -z[2])  # tilt about the base y axis until the finger axis is vertical
+    r_down = axis_angle_to_matrix(np.array([0.0, 1.0, 0.0]), tilt) @ r0
+    return axis_angle_to_matrix(np.array([0.0, 0.0, 1.0]), yaw) @ r_down
+
+
 def _result(chain: SerialChain, target: np.ndarray, q: np.ndarray) -> IKResult:
     tool = chain.fk(q)
     return IKResult(

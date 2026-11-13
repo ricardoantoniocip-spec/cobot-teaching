@@ -1,0 +1,16 @@
+{
+  "format": "cobot-cell/0.1",
+  "name": "so101_twin",
+  "note": "SO-101 follower and its MuJoCo twin. Work frame = robot base (x forward, y left). Home = the twin's HOME pose (tool point 180 mm forward, 60 mm up). Speeds kept low like the retarget replay.",
+  "robot": "so101",
+  "work_frame": {"xyz_mm": [0, 0, 0], "yaw_deg": 0},
+  "gripper": {"type": "so101"},
+  "home_joints_deg": [0, -21.782, 29.215, 82.567, 0],
+  "speeds": {
+    "slow":   {"joint_deg_s": 20, "joint_deg_s2": 60,  "linear_mm_s": 30, "linear_mm_s2": 200},
+    "normal": {"joint_deg_s": 40, "joint_deg_s2": 120, "linear_mm_s": 60, "linear_mm_s2": 400}
+  },
+  "release_gap_mm": 4,
+  "min_tool_height_mm": 4,
+  "work_area_mm": [80, 330, -250, 250]
+}
