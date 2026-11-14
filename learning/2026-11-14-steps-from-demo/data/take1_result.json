@@ -1,0 +1,22 @@
+{
+  "part_xy": [
+    0.1918,
+    0.0501
+  ],
+  "place_xy": [
+    0.2379,
+    -0.0779
+  ],
+  "copy": {
+    "success": false,
+    "reached_fraction": 0.796,
+    "place_err_mm": 136.1
+  },
+  "steps": {
+    "success": true,
+    "place_err_mm": 21.8
+  },
+  "used": "steps",
+  "episode": "/tmp/claude-0/-home-user/2fc8e287-8e8e-5788-805d-b5ef3a0949d1/scratchpad/vd2/episodes/episode_000.npz",
+  "notes": []
+}
