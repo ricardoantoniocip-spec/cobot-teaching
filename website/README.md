@@ -5,12 +5,14 @@ Static, multi-page company website. No backend, no tracking, no cookies.
 Pages: `index.html` (home), `how-it-works.html`, `service.html` ("new task in a week"), `about.html`, `contact.html` ("tell us your task").
 
 ## View it
-Open `index.html` in a browser. Or run `python -m http.server` in this folder and go to http://localhost:8000.
+Run `python -m http.server` in this folder and go to http://localhost:8000. (Opening `index.html` directly also works, but browsers then block the local fonts.)
 
 ## Change something
 - Text: edit the page in `src/`, then run `python build.py`. Do not edit the top-level `.html` files by hand; the build overwrites them.
 - Company name: change `BRAND` in `build.py` and run `python build.py`. Logo text, titles and copy all follow.
 - Contact email: set `CONTACT_EMAIL` at the top of `assets/main.js`. While it is empty, the form writes the message for the visitor to copy.
+- Fonts are in `assets/fonts/` (Archivo, Instrument Sans, JetBrains Mono, all SIL Open Font License), served from the site so no visitor data goes to a font service.
+- `404.html` is the not-found page; most hosts pick it up automatically.
 - Look: colours, fonts and spacing are tokens at the top of `assets/style.css` (light and dark).
 
 ## Assets

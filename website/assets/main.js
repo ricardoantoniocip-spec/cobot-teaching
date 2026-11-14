@@ -15,6 +15,25 @@ const CONTACT_EMAIL = "";
     });
   }
 
+  if (toggle && links) {
+    const close = () => { links.classList.remove("open"); toggle.setAttribute("aria-expanded", "false"); };
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    links.addEventListener("click", (e) => { if (e.target.closest("a")) close(); });
+  }
+
+  // light / dark switch, remembered on this device
+  const themeBtn = document.getElementById("theme-toggle");
+  if (themeBtn) {
+    themeBtn.addEventListener("click", () => {
+      const root = document.documentElement;
+      const now = root.getAttribute("data-theme") ||
+        (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      const next = now === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("theme", next); } catch (e) { /* private mode: not remembered */ }
+    });
+  }
+
   // footer year
   document.querySelectorAll("[data-year]").forEach((el) => { el.textContent = new Date().getFullYear(); });
 
