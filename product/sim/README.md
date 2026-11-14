@@ -85,7 +85,7 @@ Write the score in learning/progress.md. Pass mark, same as week 2 of the learni
 Film yourself doing a pick and place, and get a checked training episode. No markers on your body.
 
 ```
-your video -> arm tracking (MediaPipe) -> pinch point + grip -> SO-101 joint angles (IK) -> twin replay -> episode -> LeRobotDataset
+your video -> arm tracking (MediaPipe) -> hand open or closed -> SO-101 joint angles (IK) -> twin replay -> episode -> LeRobotDataset
 ```
 
 One-time setup, in the same venv:
@@ -104,8 +104,8 @@ MediaPipe prints many `INFO:` and `W0000` lines. Ignore them. It prints three st
 
 | File | What to look for |
 |---|---|
-| `tracked.mp4` | Your video with the arm drawn on it. The dot between thumb and index turns red when it sees a grip. |
-| `arm_track.csv` | Your elbow, wrist and pinch point per frame (metres from your shoulder), elbow angle, grip. |
+| `tracked.mp4` | Your video with the arm drawn on it. The dot on your hand turns red when your hand is closed, with the openness number next to it. |
+| `arm_track.csv` | Your elbow, wrist and grasp point per frame (metres from your shoulder), elbow angle, hand openness, grip. |
 | `steps.json` | The demo cut into steps: reach, grasp, move, release, retreat. `label` is empty: a vision model fills it later. |
 | `replay_copy.mp4` | The robot following your hand path sample by sample. |
 | `replay_steps.mp4` | A clean robot motion rebuilt from where you gripped and released. This one becomes the episode. |
@@ -125,22 +125,19 @@ and train ACT on it exactly as in steps 3 and 4 below.
 - Phone or webcam on a tripod or a stack of books. It must not move.
 - Your whole working arm in view the whole time: shoulder, elbow, wrist and hand. Both shoulders visible.
 - Sit facing the camera or at an angle to it. Not with your back to it.
-- Grip with thumb and index finger, like the robot's two-finger gripper. Open your hand wide between grips.
+- Open hand = not holding. Closed hand = holding. Use any grip you like (whole hand is fine), but start with a flat open hand and open it flat again after you let go.
 - One pick and one place per video, 5-15 seconds. Start and end with an open hand.
 - Good light, sleeves that contrast with the table.
 
-### If the grip is not found
+### How the grasp is found
 
-The automatic grip only sees a thumb-and-index pinch. A whole-hand grasp of a wide part (a carton, a
-bottle) looks the same as a relaxed hand. Then set the grip by hand: open `tracked.mp4`, read the time
-printed top left when you take hold and when you let go, and pass them. `--end` cuts off the part
-where you reach for the camera.
+The app measures how open your hand is in every frame: 0.9 is a flat hand, 0.45 is a fist. Under
+0.78 for at least 0.4 s is a closed hand, and it only counts as a grasp when the hand is clearly
+closed (typically under 0.70). The moment it closes is the grasp, the moment it opens is the release.
 
-```powershell
-python -m so101_sim from-video my_task.mp4 --arm right --grips 3.0-8.5 --end 9.5
-```
-
-Whole-hand grip (the pinch dot never turns red)? Let the app find the times from the object:
+A wide part (a carton, a bottle) keeps your fingers almost straight, so the hand never clearly
+closes. The app then says so and looks at the object instead, with no extra option needed. You can
+also ask for that directly:
 
 ```
 python -m so101_sim from-video my_task.mp4 --arm right --grips object
@@ -150,6 +147,13 @@ It looks for the object where it stood at the start, finds where it stands later
 moments it leaves and arrives as grasp and release. Check `object_motion.jpg` in the output
 folder. Limits: one object, one move, fixed camera; if the hand hides almost nothing of the
 object, the release can be found too early. Tested on take 1's overlay video and on made-up videos.
+
+If both fail, set the times by hand: open `tracked.mp4`, read the time printed top left when you
+take hold and when you let go, and pass them. `--end` cuts off the part where you reach for the camera.
+
+```powershell
+python -m so101_sim from-video my_task.mp4 --arm right --grips 3.0-8.5 --end 9.5
+```
 
 ### What the numbers mean (body mode, the default)
 

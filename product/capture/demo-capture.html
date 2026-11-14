@@ -70,7 +70,7 @@ video { width: 100%; max-height: 300px; border-radius: 10px; background: #000; }
     <ul class="tips">
       <li>Phone fixed on a stand. It must not move.</li>
       <li>Shoulder, elbow, wrist and hand in view the whole time.</li>
-      <li>Grip a small part with thumb and index finger. Open your hand wide before and after.</li>
+      <li>Start with a flat open hand. Close your hand on the part, any grip you like. Open it flat again after you let go.</li>
       <li>One pick and one place on the same flat surface, 5 to 15 seconds.</li>
       <li>Camera setting 1080p at 30 fps or lower, so the file stays under 20 MB.</li>
     </ul>
@@ -228,7 +228,8 @@ video { width: 100%; max-height: 300px; border-radius: 10px; background: #000; }
 Judge whether the video is usable. Reply with only a JSON object with these keys:
 "arm_in_view": true if the ${arm} shoulder, elbow, wrist and hand are inside the picture in every frame,
 "hand_clear": true if the hand is not hidden behind the object or the body and not badly blurred,
-"pinch_grip": true if the object is held between thumb and index finger (a whole-hand grasp around a wide object is false),
+"hand_open_start_end": true if in the first and the last frame the hand is open and holds nothing (fingers stretched, not curled),
+"hand_closes": true if in at least one middle frame the fingers are clearly curled around the object. Any grip counts: whole hand, several fingers or a pinch. False if the fingers stay almost straight, for example flat against a wide object,
 "pick_and_place": true if the frames show an object being picked up and put down somewhere else,
 "flat_surface": true if pick and place happen on the same flat surface such as a table,
 "light_ok": true if the scene is bright enough to see the hand clearly,
@@ -238,7 +239,8 @@ Judge whether the video is usable. Reply with only a JSON object with these keys
     ["arm_in_view", "bad", "Whole arm in view", "Shoulder, elbow, wrist or hand leaves the picture."],
     ["hand_clear", "bad", "Hand clearly visible", "The hand is hidden or blurred."],
     ["pick_and_place", "bad", "A pick and a place are shown", "No clear pick up and put down."],
-    ["pinch_grip", "warn", "Thumb and index grip", "Whole-hand grasp: the grip times will have to be set by hand."],
+    ["hand_open_start_end", "warn", "Open hand at start and end", "The hand is not clearly open before the pick or after the place. An open hand means not holding."],
+    ["hand_closes", "warn", "Hand closes on the part", "The fingers stay almost straight, so the grasp will be read from the part moving. A smaller part gives a clearer grasp."],
     ["flat_surface", "warn", "Same flat surface", "Pick and place are at different heights."],
     ["light_ok", "warn", "Enough light", "Too dark to see the hand well."],
   ];
