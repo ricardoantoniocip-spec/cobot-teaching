@@ -53,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--open-ratio", type=float, default=0.84, help="hand counts as open again above this openness")
     s.add_argument("--grips", help="set the grip by hand: seconds from grasp to release, e.g. 3.0-8.5 (times are shown on tracked.mp4), "
                         "or 'object' to find them from the object's motion")
+    s.add_argument("--object", dest="obj", help="what you move, in plain words, e.g. \"juice carton\": an object detector then finds it, "
+                        "follows it and reads grasp and release from it (needs requirements-vision.txt)")
     s.add_argument("--start", type=float, help="use the video from this second")
     s.add_argument("--end", type=float, help="use the video up to this second")
 
@@ -114,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "from-video":
         from .from_video import from_video
 
-        return from_video(a.video, a.out, a.arm, a.use, a.markers, a.camera, a.hand_width_mm, a.close_ratio, a.open_ratio, a.grips, a.start, a.end)
+        return from_video(a.video, a.out, a.arm, a.use, a.markers, a.camera, a.hand_width_mm, a.close_ratio, a.open_ratio, a.grips, a.start, a.end, a.obj)
 
     if a.cmd == "to-lerobot":
         from .episodes import npz_to_lerobot

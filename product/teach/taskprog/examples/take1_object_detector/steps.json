@@ -1,0 +1,220 @@
+{
+  "video": "take1.mp4",
+  "mode": "body",
+  "arm": "right",
+  "video_t0": 0.0,
+  "steps": [
+    {
+      "step": "reach",
+      "t_start": 0.0,
+      "t_end": 4.533,
+      "from_xyz": [
+        0.1555,
+        -0.0321,
+        -0.011
+      ],
+      "to_xyz": [
+        0.1658,
+        0.0495,
+        0.0936
+      ],
+      "holding": false,
+      "label": null
+    },
+    {
+      "step": "grasp",
+      "t_start": 4.533,
+      "t_end": 4.533,
+      "from_xyz": [
+        0.1658,
+        0.0495,
+        0.0936
+      ],
+      "to_xyz": [
+        0.1658,
+        0.0495,
+        0.0936
+      ],
+      "holding": true,
+      "label": null
+    },
+    {
+      "step": "move",
+      "t_start": 4.533,
+      "t_end": 7.733,
+      "from_xyz": [
+        0.1658,
+        0.0495,
+        0.0936
+      ],
+      "to_xyz": [
+        0.2487,
+        -0.0708,
+        0.0347
+      ],
+      "holding": true,
+      "label": null
+    },
+    {
+      "step": "release",
+      "t_start": 7.733,
+      "t_end": 7.733,
+      "from_xyz": [
+        0.2487,
+        -0.0708,
+        0.0347
+      ],
+      "to_xyz": [
+        0.2487,
+        -0.0708,
+        0.0347
+      ],
+      "holding": false,
+      "label": null
+    },
+    {
+      "step": "reach",
+      "t_start": 7.733,
+      "t_end": 11.567,
+      "from_xyz": [
+        0.2487,
+        -0.0708,
+        0.0347
+      ],
+      "to_xyz": [
+        0.2414,
+        -0.033,
+        0.0382
+      ],
+      "holding": false,
+      "label": null
+    },
+    {
+      "step": "grasp",
+      "t_start": 11.567,
+      "t_end": 11.567,
+      "from_xyz": [
+        0.2414,
+        -0.033,
+        0.0382
+      ],
+      "to_xyz": [
+        0.2414,
+        -0.033,
+        0.0382
+      ],
+      "holding": true,
+      "label": null
+    },
+    {
+      "step": "move",
+      "t_start": 11.567,
+      "t_end": 14.367,
+      "from_xyz": [
+        0.2414,
+        -0.033,
+        0.0382
+      ],
+      "to_xyz": [
+        0.2332,
+        -0.0378,
+        0.0434
+      ],
+      "holding": true,
+      "label": null
+    },
+    {
+      "step": "release",
+      "t_start": 14.367,
+      "t_end": 14.367,
+      "from_xyz": [
+        0.2332,
+        -0.0378,
+        0.0434
+      ],
+      "to_xyz": [
+        0.2332,
+        -0.0378,
+        0.0434
+      ],
+      "holding": false,
+      "label": null
+    },
+    {
+      "step": "retreat",
+      "t_start": 14.367,
+      "t_end": 15.867,
+      "from_xyz": [
+        0.2332,
+        -0.0378,
+        0.0434
+      ],
+      "to_xyz": [
+        0.148,
+        -0.0278,
+        -0.0021
+      ],
+      "holding": false,
+      "label": null
+    }
+  ],
+  "object": {
+    "name": "juice carton",
+    "score": 0.78,
+    "seen_fraction": 1.0,
+    "moves": [
+      {
+        "t_grasp": 4.53,
+        "t_release": 7.71,
+        "pick_box_px": [
+          620.6,
+          264.2,
+          692.9,
+          419.1
+        ],
+        "place_box_px": [
+          896.5,
+          500.4,
+          1012.9,
+          718.9
+        ],
+        "pick_px": [
+          656.7,
+          419.1
+        ],
+        "place_px": [
+          954.7,
+          718.9
+        ],
+        "hand_on_object": true
+      },
+      {
+        "t_grasp": 11.56,
+        "t_release": 14.34,
+        "pick_box_px": [
+          896.5,
+          500.4,
+          1012.9,
+          718.9
+        ],
+        "place_box_px": [
+          846.3,
+          495.4,
+          958.4,
+          718.7
+        ],
+        "pick_px": [
+          954.7,
+          718.9
+        ],
+        "place_px": [
+          902.3,
+          718.7
+        ],
+        "hand_on_object": true
+      }
+    ],
+    "notes": [],
+    "named_by": "you"
+  }
+}

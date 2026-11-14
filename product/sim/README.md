@@ -135,9 +135,33 @@ The app measures how open your hand is in every frame: 0.9 is a flat hand, 0.45 
 0.78 for at least 0.4 s is a closed hand, and it only counts as a grasp when the hand is clearly
 closed (typically under 0.70). The moment it closes is the grasp, the moment it opens is the release.
 
+### Best: tell the app what you move
+
+```
+pip install -r ../teach/requirements-vision.txt     (once; torch and transformers)
+python -m so101_sim from-video my_task.mp4 --arm right --object "juice carton"
+```
+
+An object detector (LLMDet tiny, an open model from Hugging Face, about 700 MB on first use)
+finds the object by name every half second, also while your hand is on it. Where the object
+stands still it rests; between two resting places it is being moved. That gives the grasp, the
+release and the pick and place spots, for every time you move it, and the app checks that your
+tracked hand is on the object at each grasp. Check `object_track.jpg`. The name, the times and
+the boxes go into `steps.json`, and from there into the task file and the robot program
+(`python -m taskprog from-steps`).
+
+About 5 s per picture on a laptop CPU, so about 3.5 minutes for a 17 s video; a GPU is about ten
+times faster. Limits: one object per video, fixed camera, plain words work best ("juice carton",
+"metal bracket"). The twin replays the first pick and place only. Tested on take 1 (both moves
+found, twin SUCCESS) and on made-up videos.
+
+### Without a name
+
 A wide part (a carton, a bottle) keeps your fingers almost straight, so the hand never clearly
-closes. The app then says so and looks at the object instead, with no extra option needed. You can
-also ask for that directly:
+closes. The app then says so and looks at the object instead, with no extra option needed: first
+with the detector (it looks for common things and takes the one that is moved; on take 1 it finds
+the carton and calls it "bottle"), and if torch is not installed, with a plain picture comparison.
+You can also ask for the picture comparison directly:
 
 ```
 python -m so101_sim from-video my_task.mp4 --arm right --grips object

@@ -55,6 +55,26 @@ Limits: example positions, not a measured cell. No check that a part is really i
 or the feeder. The press example has no door or light-curtain signal; safety design stays with
 the integrator. On a timeout the program stops where it is and leaves outputs as they are.
 
+## Take 1 again with the object detector, 14 Nov 2026
+
+`so101_sim from-video take1.mp4 --object "juice carton"`, then `from-steps`, `check`, `ursim`.
+Files in [examples/take1_object_detector](examples/take1_object_detector).
+
+| | Before | Now |
+|---|---|---|
+| Object | not identified | "juice carton", found in 37 of 37 pictures looked at, score 0.78 |
+| Moves found | 1 (the second was reported as "moved again", not used) | 2: grasp 4.53 s, release 7.71 s; grasp 11.56 s, release 14.34 s |
+| Hand on the object at each grasp | not checked | checked, yes for both |
+| Task file | one pick, one place, object "part" | two picks and places of `juice_carton`; the second pick reuses the first place location |
+| URSim 5.26, UR5e | PASS | PASS, 6 steps, every step within 0.1 mm of the plan |
+| SO-101 twin | SUCCESS, first move | first move SUCCESS (12 mm). Both moves: FAIL at the second pick, see below |
+
+Second move in the twin: after the first place the block stands about 12 mm from where the
+program thinks it is, and the gripper misses a 20 mm block on the re-pick. A real cell has the
+same problem; the fix is to look where the part really is before each pick, which is not built.
+
+Cost: about 3.5 minutes of detector time for the 17 s video on a 4-core CPU.
+
 ## URSim on your laptop (optional, about 20 minutes)
 
 Needs Docker Desktop (Windows, WSL 2).
@@ -76,7 +96,7 @@ docker stop ursim
 
 ## Tests
 
-`python -m pytest -q tests` (60 tests, about 40 s; the twin test needs mujoco and skips without it).
+`python -m pytest -q tests` (81 tests, about 45 s; the twin test needs mujoco and skips without it).
 
 ## Demo video
 

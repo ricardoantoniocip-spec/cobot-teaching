@@ -1,7 +1,8 @@
 """Play the SO-101 trajectory of a task in the MuJoCo twin (product/sim) and score it.
 
-The twin is a flat table with one block, so the task must have exactly one pick and one place,
-both on surfaces at height 0.
+The twin is a flat table with one block. The task may pick and place that block several
+times (a part moved twice in the demo), as long as every later pick is where the block was last
+put down. The score is where the block ends: at the last place or not.
 """
 
 from __future__ import annotations
@@ -18,13 +19,20 @@ SIM_DIR = Path(__file__).resolve().parents[2] / "sim"
 
 
 def run_twin(task: Task, cell: Cell, video: Path | None = None):
-    picks = [s for s in task.steps if s.do == "pick"]
-    places = [s for s in task.steps if s.do == "place"]
-    if len(picks) != 1 or len(places) != 1:
-        raise ValueError("the twin check needs exactly one pick and one place")
-    pick, place = task.locations[picks[0].at], task.locations[places[0].at]
-    if pick.xyz_mm[2] != 0 or place.xyz_mm[2] != 0:
+    moves = [s for s in task.steps if s.do in ("pick", "place")]
+    picks = [s for s in moves if s.do == "pick"]
+    places = [s for s in moves if s.do == "place"]
+    if not picks or len(picks) != len(places):
+        raise ValueError("the twin check needs at least one pick and place")
+    if len({s.obj for s in moves}) != 1 or any(s.slot is not None for s in moves):
+        raise ValueError("the twin has one block and no trays: one object, no grid slots")
+    if any(task.locations[s.at].xyz_mm[2] != 0 for s in moves):
         raise ValueError("the twin has one flat table: pick and place surfaces must be at z = 0 (use --flat-table)")
+    for prev, nxt in zip(places[:-1], picks[1:]):
+        a, b = task.locations[prev.at].xyz_mm, task.locations[nxt.at].xyz_mm
+        if np.hypot(a[0] - b[0], a[1] - b[1]) > 5.0:
+            raise ValueError(f"step {nxt.id} picks at {nxt.at}, but the block was last put down at {prev.at}")
+    pick, place = task.locations[picks[0].at], task.locations[places[-1].at]
     if cell.work_frame_mm_deg != (0.0, 0.0, 0.0, 0.0):
         raise ValueError("use the so101 cell (work frame = robot base) for the twin")
     sys.path.insert(0, str(SIM_DIR))

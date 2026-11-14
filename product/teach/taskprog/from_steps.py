@@ -21,6 +21,18 @@ def _ok_name(v) -> bool:
     return isinstance(v, str) and bool(NAME_RE.match(v)) and v not in RESERVED
 
 
+def _same_place(seen: dict | None, pick_no: int) -> bool:
+    """Does pick number `pick_no` start where the place before it ended, going by the object's boxes?"""
+    try:
+        a, b = seen["moves"][pick_no - 2]["place_box_px"], seen["moves"][pick_no - 1]["pick_box_px"]
+    except (TypeError, KeyError, IndexError):
+        return False
+    w, h = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
+    if w <= 0 or h <= 0:
+        return False
+    return w * h / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - w * h) > 0.5
+
+
 def _mm(xyz) -> list[float]:
     return [round(float(v) * 1000.0, 1) for v in xyz]
 
@@ -45,11 +57,26 @@ def steps_to_task(
 
     objects_l = [o for o in labels.get("objects", []) if isinstance(o, dict)]
     obj_name = objects_l[0].get("name") if objects_l else None
+    obj_desc = clean_text(objects_l[0].get("description", "")) if objects_l else ""
+    seen = steps_doc.get("object") if isinstance(steps_doc.get("object"), dict) else None
+    if seen:
+        # The video app followed the object with a detector. Its name is used when no label gives one.
+        seen_name = re.sub(r"[^a-z0-9]+", "_", clean_text(str(seen.get("name", ""))).lower()).strip("_")[:40]
+        if not obj_name and _ok_name(seen_name):
+            obj_name = seen_name
+            who = "you" if seen.get("named_by") == "you" else "the object detector"
+            obj_desc = obj_desc or f"named by {who}; detector score {seen.get('score', '?')}"
+            if seen.get("named_by") != "you":
+                review.append(f"the object name '{seen_name}' is the detector's guess; check it")
+        for k, mv in enumerate(seen.get("moves", []), start=1):
+            if mv.get("hand_on_object") is False:
+                review.append(f"pick {k}: the object moved but the tracked hand was not on it; check the video at {mv.get('t_grasp')} s")
+        for note in seen.get("notes", []):
+            review.append("object detector: " + clean_text(str(note), 300))
     if not _ok_name(obj_name):
         if obj_name:
             review.append(f"object name {clean_text(str(obj_name))!r} from the LLM is not a valid name; used 'part'")
         obj_name = "part"
-    obj_desc = clean_text(objects_l[0].get("description", "")) if objects_l else ""
     if len(objects_l) > 1:
         review.append("the LLM saw more than one object; this version handles one object per task")
 
@@ -70,6 +97,7 @@ def steps_to_task(
 
     seg_start = 0.0
     picks = places = 0
+    last_place: str | None = None
     for i, s in enumerate(steps):
         kind = s.get("step")
         if kind in ("reach", "move"):
@@ -79,6 +107,13 @@ def steps_to_task(
             surface = 0.0 if flat_table else round(xyz[2] - gh, 1)
             if kind == "grasp":
                 picks += 1
+                if last_place and _same_place(seen, picks):
+                    # The object track shows this pick starts where the last place ended. Use that
+                    # one location, not a second one a few millimetres off from hand tracking.
+                    task_steps.append({"do": "pick", "object": obj_name, "at": last_place,
+                                       "label": clean_text(by_index.get(i, {}).get("label", "")) or "pick (unlabelled)",
+                                       "demo": {"t_start": round(seg_start, 3), "t_end": round(float(s["t_end"]), 3)}})
+                    continue
                 name = loc_name(i, f"pick_{picks}")
             else:
                 places += 1
@@ -88,6 +123,8 @@ def steps_to_task(
             label = clean_text(by_index.get(i, {}).get("label", "")) or f"{'pick' if kind == 'grasp' else 'place'} (unlabelled)"
             task_steps.append({"do": "pick" if kind == "grasp" else "place", "object": obj_name, "at": name,
                                "label": label, "demo": {"t_start": round(seg_start, 3), "t_end": round(float(s["t_end"]), 3)}})
+            if kind == "release":
+                last_place = name
     task_steps.append({"do": "home", "label": "back to home"})
     for k, st in enumerate(task_steps):
         st["id"] = k + 1
