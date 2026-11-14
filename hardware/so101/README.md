@@ -7,3 +7,5 @@ https://github.com/TheRobotStudio/SO-ARM100/blob/a758567c3978dfeefe282ede0500085
 
 The mesh files it refers to are not copied. Kinematics code only needs the joint frames.
 The tool point (TCP) is the `gripper_frame_link`.
+
+Print files for the follower arm are in [print/](print/README.md).
