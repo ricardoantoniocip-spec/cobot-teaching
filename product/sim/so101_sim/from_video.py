@@ -59,7 +59,7 @@ def demo_to_episode(demo: HandDemo, steps: list[dict], out_dir: Path, episodes_d
 
     points = pick_and_place_points(steps)
     if points is None:
-        raise RuntimeError("The demo has no grasp followed by a release, so there is nothing to pick and place. Check tracked.mp4: does the pinch dot turn red when you grip?")
+        raise RuntimeError("The demo has no grasp followed by a release, so there is nothing to pick and place. Check tracked.mp4: does the hand dot turn red when your hand closes?")
     part_xy, place_xy = scripted.part_centre(points[0]), scripted.part_centre(points[1])
     notes = []
     for name, xy in (("pick", part_xy), ("place", place_xy)):
@@ -132,7 +132,7 @@ def grips_from_object(video: Path, out_dir: Path, start: float | None, end: floa
 
 
 def from_video(video: Path, out: Path, arm: str = "right", use: str = "steps", markers: Path | None = None, camera: Path | None = None,
-               hand_width_mm: float | None = None, close_ratio: float = 0.5, open_ratio: float = 0.7,
+               hand_width_mm: float | None = None, close_ratio: float = 0.78, open_ratio: float = 0.84,
                grips: str | None = None, start: float | None = None, end: float | None = None) -> int:  # fmt: skip
     from retarget import pose
     from retarget.video import CameraModel, MarkerSetup
@@ -162,13 +162,27 @@ def from_video(video: Path, out: Path, arm: str = "right", use: str = "steps", m
     print(f"  {len(res.demo)} samples, {res.demo.t[-1]:.1f} s, mode: {res.mode}" + (f", your arm scaled x{res.scale:.2f}" if res.mode == "body" else ""))
     print("  steps: " + " > ".join(s["step"] for s in steps))
 
+    grip_from = "times you gave" if events and grips != "object" else "the object's motion" if events else "your hand closing and opening"
+    if grips is None and pose.pick_and_place_points(steps) is None:
+        # The hand never read as closed then open again. A wide part keeps the fingers almost straight,
+        # so look at the object instead: when it leaves its place and when it arrives.
+        print("  your hand did not close and open again in the video. Trying the object's motion instead.")
+        try:
+            cfg.grip_events = grips_from_object(video, out_dir, start, end)
+        except NoObjectMotion as e:
+            print(f"  stopped: no grasp found from the hand or from the object ({e}).")
+            print("  film again with a flat open hand before and after the grip, or give the times by hand: --grips 3.0-8.5")
+            return 1
+        res, steps = pose.video_to_demo(video, out_dir, scripted._chain(), cfg, tracked=res.tracked)
+        print("  steps: " + " > ".join(s["step"] for s in steps))
+        grip_from = "the object's motion (check object_motion.jpg)"
+    print(f"  grasp and release taken from: {grip_from}")
+
     print("2/3 robot motion (IK) and replay in the twin")
     try:
         ep = demo_to_episode(res.demo, steps, out_dir, out / "episodes", use)
     except RuntimeError as e:
         print("  stopped:", e)
-        if grips is None:
-            print("  if you gripped with the whole hand, try:  --grips object  (finds grasp and release from the object's motion)")
         return 1
     for n in ep.notes:
         print("  note:", n)

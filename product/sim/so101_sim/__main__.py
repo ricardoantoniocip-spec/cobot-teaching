@@ -49,8 +49,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--markers", type=Path, help="markers.json: switch to table-marker mode (true scale)")
     s.add_argument("--camera", type=Path, help="camera.json with fx, fy, cx, cy, dist")
     s.add_argument("--hand-width-mm", type=float, help="your knuckle width, index to little finger (table-marker mode)")
-    s.add_argument("--close-ratio", type=float, default=0.5)
-    s.add_argument("--open-ratio", type=float, default=0.7)
+    s.add_argument("--close-ratio", type=float, default=0.78, help="hand counts as closed below this openness (1 = flat hand, 0.45 = fist)")
+    s.add_argument("--open-ratio", type=float, default=0.84, help="hand counts as open again above this openness")
     s.add_argument("--grips", help="set the grip by hand: seconds from grasp to release, e.g. 3.0-8.5 (times are shown on tracked.mp4), "
                         "or 'object' to find them from the object's motion")
     s.add_argument("--start", type=float, help="use the video from this second")
