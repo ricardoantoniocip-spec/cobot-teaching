@@ -1,6 +1,6 @@
 # Project context (read this first)
 
-Shared facts for every agent and skill. Last updated 2026-11-13.
+Shared facts for every agent and skill. Last updated 2026-11-15.
 
 ## Ricardo
 - Production engineer in Eindhoven, mechanical engineering background, robotics minor (kinematics, IK). Python, Lean/LSS, OEE.
@@ -28,6 +28,8 @@ Shared facts for every agent and skill. Last updated 2026-11-13.
 - Digital twin (2026-11-08): product/sim is a MuJoCo SO-101 with a pick-and-place table. Scripted demo -> retarget -> twin replay succeeds 20/20; episodes export to a LeRobotDataset for ACT training and `evaluate` scores a trained policy in the twin (README there). Not yet run on the laptop.
 - Video app (2026-11-12): `python -m so101_sim from-video my_task.mp4` tracks the operator's arm in a plain video (MediaPipe, CPU), maps the pinch point to SO-101 joints, replays in the twin and saves a LeRobot episode if it succeeds. Default "body mode" scales his arm to the robot (not true mm); table-marker mode gives true positions. Tested on made-up landmarks only, not yet on a real pick-and-place video (product/sim/README.md, decision 2026-11-12).
 - Grasp signal (2026-11-14): the video app reads a grasp from the whole hand, open = not holding, closed = holding (any grip), not from a thumb-and-index pinch. Only a clearly closed hand counts. If the hand never clearly closes (wide part), the app falls back to the object's motion by itself. On take 1 (wide carton) the hand only half closes, so the fallback is used. Not yet tested on a real video of a small part (decision 2026-11-14).
+- Live mode (2026-11-15): `python -m so101_sim live` makes his arm the leader and the SO-101 the follower, picture by picture (webcam, twin, later `--port` for the real arm), and shows all body and object tracking in one window for troubleshooting. Tested on take 1 as a recorded video and made-up data; not yet on a live webcam or hardware. First power-up steps: hardware/so101/first-power-up.md (`python -m retarget bringup`). Decision 2026-11-15.
+- Whole-project review (2026-11-14): research/2026-11-14-project-review.md. Top gaps: true positions in mm, robot looks before each pick, a 20-take test set, real hardware, a product surface (upload, review, deliver), 0 interviews.
 - Patents: the broad sleeve idea is prior art. Keep methods as trade secrets, publish no method details. Possibly protectable later: calibrating the sleeve against the leader arm.
 
 ## Plan and gates

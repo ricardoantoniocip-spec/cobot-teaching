@@ -111,14 +111,16 @@ class ObjectTrack:
 class Detector:
     """Open-vocabulary detector. Loaded once; `find(image, names)` returns Detections."""
 
-    def __init__(self, model_id: str = DEFAULT_MODEL):
+    def __init__(self, model_id: str = DEFAULT_MODEL, device: str | None = None):
         try:
             import torch
             from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
         except ImportError as e:
             raise ImportError("object detection needs torch and transformers: pip install -r requirements-vision.txt") from e
         self.torch = torch
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if device == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("cuda asked for, but this torch build cannot use the graphics card. Run: python -m so101_sim devices")
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")  # the graphics card when torch can use it
         self.processor = AutoProcessor.from_pretrained(model_id)
         self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(self.device).eval()
         self.model_id = model_id

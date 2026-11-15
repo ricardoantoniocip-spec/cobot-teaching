@@ -21,6 +21,8 @@ The arm model is the official one (TheRobotStudio/SO-ARM100, same commit as
 | `python -m so101_sim replay traj.csv --video replay.mp4` | Plays a retarget trajectory in the twin, prints tracking, tool error and SUCCESS/FAIL |
 | `python -m so101_sim demos 50 --out sim_data` | 50 random part/place positions, keeps the successful runs as training episodes |
 | `python -m so101_sim from-video my_task.mp4` | Your own video to a twin replay and a training episode (see "From your own video") |
+| `python -m so101_sim live` | LIVE: your arm leads, the robot follows, and you see all the tracking (see "Live") |
+| `python -m so101_sim devices` | Says what this computer uses: graphics card, 3D view, camera |
 | `python -m so101_sim to-lerobot sim_data USER/so101_sim_pick_place --root sim_data/lerobot` | Episodes to a LeRobotDataset (add `--push` to upload it, private, to your Hugging Face account) |
 | `python -m so101_sim evaluate POLICY_DIR --trials 20` | Runs a trained policy in the twin and counts successes |
 
@@ -79,6 +81,63 @@ python -m so101_sim evaluate outputs\act_so101_sim --trials 20 --video-dir outpu
 ```
 
 Write the score in learning/progress.md. Pass mark, same as week 2 of the learning plan: 12/20.
+
+## Live: your arm leads, the robot follows (15 Nov 2026)
+
+One window. Left: the webcam with your body, both hands and the objects drawn on it. Right: the
+robot in the twin doing what your arm does, and a panel with the numbers.
+
+```powershell
+python -m so101_sim devices                       # what will run on the graphics card
+python -m so101_sim live                          # body tracking + twin
+python -m so101_sim live --objects                # also find common things on the table
+python -m so101_sim live --objects "juice carton" # or one thing by name
+python -m so101_sim live --port COM5              # also drive the real SO-101 (when it is built)
+python -m so101_sim live --video take.mp4 --no-window --save out.mp4 --log out.csv   # a recorded video
+```
+
+How to start: sit as you will work, **rest your working hand on the table and hold still for
+2 seconds** (yellow bar). That sets your body directions, your arm length and the table height.
+Then move. Open hand = gripper open, closed hand = gripper closed, anything in between too.
+
+Keys: `q` quit, `c` calibrate again, `SPACE` pause or continue the robot, `o` objects on or off,
+`r` put the block back, `s` save a picture.
+
+What the panel tells you:
+
+| Line | Meaning | If it looks wrong |
+|---|---|---|
+| WAITING / CALIBRATING / FOLLOWING / HOLD | what the follower is doing | WAITING: both shoulders and the whole arm must be in view. HOLD: the hand is not seen |
+| arm seen, hand seen, tracking ms | the body tracker on this picture | more light, plain sleeve, hand not edge-on to the camera |
+| hand openness, gripper % | 0.9 flat hand, 0.45 fist | a wide part keeps the number high: that is the known weak spot |
+| tool point x y z | where the robot's gripper is asked to go (mm, robot base) | AT EDGE OF REACH: your hand is outside the robot's scaled working area |
+| IK miss, behind | how far the joints end from that point; how far the speed limit holds them back | "behind" stays large: you move faster than `--max-speed` |
+| objects on cuda / cpu, one look takes | the object detector | on cpu a look takes 5 to 10 s, so the boxes are old (age is printed on each box) |
+
+### Graphics card
+
+- **Object detector**: runs on an NVIDIA card when torch was installed with CUDA. `devices` tells
+  you. If it says CPU:
+  `pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu124`
+- **Twin 3D view**: MuJoCo draws with the graphics card by itself.
+- **Body tracking** (MediaPipe): CPU. Its Python package has no graphics card mode on Windows, and it
+  does not need one (tens of milliseconds per picture).
+
+### The real arm (`--port`), UNTESTED until the servos arrive
+
+It starts PAUSED: the twin follows you, the arm does not. Press `SPACE` to let the arm follow,
+`SPACE` again to stop it. Joints are capped at 45 deg/s (`--max-speed`). On quit it goes back to
+where it started, then switches off (it goes limp: keep a hand near it). First do
+`hardware/so101/first-power-up.md`.
+
+### Limits
+
+- Positions are scaled from your arm, not true millimetres. One camera is weak in depth, so
+  reaching towards or away from the camera is the least accurate direction.
+- The SO-101 has 5 joints. Its gripper points down near the table and tilts forward as your hand
+  goes up; it does not copy your wrist's rotation.
+- Tested on take 1 as a recorded video (arm seen in 100% of pictures, hand in 82%, IK miss under
+  4 mm) and on made-up landmarks. Not yet tested with a live webcam, on Windows, or on a graphics card.
 
 ## From your own video (12 Nov 2026)
 
