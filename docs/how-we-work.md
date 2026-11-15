@@ -66,6 +66,18 @@ Imported from GitHub (open-source, licence and source in each folder)
 
 Engineering skills and plugins (code review, security, testing, scaling to SaaS): see docs/engineering-skills.md for what to use when and the one-time laptop install.
 
+Startup skills (business side, imported)
+| Skill | Used by | Source |
+|---|---|---|
+| pricing | Pedro, Petra | coreyhaines31/marketingskills (MIT) |
+| sales-enablement | Olivia, Pedro | coreyhaines31/marketingskills (MIT) |
+| customer-research | Iris | coreyhaines31/marketingskills (MIT) |
+| competitor-profiling | Marco | coreyhaines31/marketingskills (MIT) |
+| triage-nda, review-contract | anyone | anthropics/knowledge-work-plugins (Apache-2.0) |
+| write-spec | Rui | anthropics/knowledge-work-plugins (Apache-2.0) |
+
+What to use when: docs/startup-skills.md.
+
 Hugging Face skills (hf-cli to upload datasets and models, trackio to track training) are now turned on in `.claude/settings.json`; install steps are in docs/engineering-skills.md. Uploads stay private by default; check before anything goes public.
 
 To add a skill: a folder in .claude/skills with a SKILL.md (name, description, steps).
