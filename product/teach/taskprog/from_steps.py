@@ -80,8 +80,18 @@ def steps_to_task(
     if len(objects_l) > 1:
         review.append("the LLM saw more than one object; this version handles one object per task")
 
+    # With a table marker the video app measured where the object stood, in true mm. Those win over the hand.
+    on_table = [mv for mv in (seen or {}).get("moves", []) if mv.get("pick_xyz_mm") and mv.get("place_xyz_mm")]
+    use_table = bool(on_table) and len(on_table) == len((seen or {}).get("moves", []))
+    size_from_picture = False
+    if use_table and not size_measured and on_table[0].get("size_mm"):
+        object_size_mm = tuple(float(v) for v in on_table[0]["size_mm"])
+        size_from_picture = True
+
     gh = grasp_height_mm if grasp_height_mm is not None else min(object_size_mm[2] / 2, 30.0)
-    if not size_measured:
+    if size_from_picture:
+        review.append(f"object size {object_size_mm[0]:g} x {object_size_mm[1]:g} x {object_size_mm[2]:g} mm is a rough estimate from the picture (depth taken equal to width); measure it")
+    elif not size_measured:
         review.append(f"object size {object_size_mm[0]:g} x {object_size_mm[1]:g} x {object_size_mm[2]:g} mm and grasp height {gh:g} mm are assumed, not measured")
 
     locations: dict[str, dict] = {}
@@ -105,6 +115,10 @@ def steps_to_task(
         elif kind in ("grasp", "release"):
             xyz = _mm(s["to_xyz"])
             surface = 0.0 if flat_table else round(xyz[2] - gh, 1)
+            k = picks if kind == "grasp" else places  # this is move number k + 1
+            if use_table and k < len(on_table):
+                x, y, surface = on_table[k]["pick_xyz_mm" if kind == "grasp" else "place_xyz_mm"]
+                xyz = [x, y, surface + gh]
             if kind == "grasp":
                 picks += 1
                 if last_place and _same_place(seen, picks):
@@ -132,7 +146,10 @@ def steps_to_task(
     if flat_table:
         review.append("heights flattened to one table (--flat-table): the demo's measured heights were not used")
     review.append("yaw of every location is 0: the video app does not measure object orientation yet")
-    if steps_doc.get("mode") == "body":
+    if use_table:
+        review.append("pick and place positions are the object's place on the table, from its box in the picture and the table marker "
+                      "(one camera: expect a centimetre or two; not yet checked on a real cell)")
+    elif steps_doc.get("mode") == "body":
         review.append("positions come from body mode (arm scaled to the SO-101, not true millimetres)")
 
     name = labels.get("task_name")

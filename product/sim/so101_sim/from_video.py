@@ -131,7 +131,7 @@ def grips_from_object(video: Path, out_dir: Path, start: float | None, end: floa
     return [(m.t_grasp, m.t_release)]
 
 
-def grips_from_detector(video: Path, out_dir: Path, start: float | None, end: float | None, name: str | None, tracked=None):
+def grips_from_detector(video: Path, out_dir: Path, start: float | None, end: float | None, name: str | None, tracked=None, markers=None):
     """Grasp and release times from an object detector that finds the object by name and follows it
     (retarget.objects). Returns (events in video seconds, ObjectTrack). Raises NoObjectMotion, or
     ImportError when torch and transformers are not installed."""
@@ -149,6 +149,14 @@ def grips_from_detector(video: Path, out_dir: Path, start: float | None, end: fl
     for m in tr.moves:
         m.t_grasp += t0
         m.t_release += t0
+    if markers is not None and tracked is not None:
+        from retarget.table import table_from_frames
+
+        cam_to_table = table_from_frames(tracked[0])
+        if cam_to_table is None:
+            tr.notes.append("the table marker was not seen, so the object's position on the table is not known")
+        else:
+            objects.add_table_positions(tr, tracked[1], cam_to_table, markers.base_to_table)
     out_dir.mkdir(parents=True, exist_ok=True)
     shown = objects.ObjectTrack(tr.name, tr.score, tr.times, tr.boxes,
                                 [objects.Move(m.t_grasp - t0, m.t_release - t0, m.pick_box, m.place_box) for m in tr.moves])  # fmt: skip
@@ -157,6 +165,9 @@ def grips_from_detector(video: Path, out_dir: Path, start: float | None, end: fl
     for m in tr.moves:
         hand = "" if m.hand_on_object is None else (", your hand is on it" if m.hand_on_object else ", your tracked hand is NOT on it")
         print(f"  grasp at {m.t_grasp:.2f} s, release at {m.t_release:.2f} s{hand}")
+        if m.pick_xyz_mm:
+            print(f"    on the table (mm, robot base): picked at x {m.pick_xyz_mm[0]:.0f} y {m.pick_xyz_mm[1]:.0f}, placed at x {m.place_xyz_mm[0]:.0f} y {m.place_xyz_mm[1]:.0f}; "
+                  f"size about {m.size_mm[0]:.0f} wide, {m.size_mm[2]:.0f} high")
     for note in tr.notes:
         print("  note:", note)
     print(f"  check {out_dir / 'object_track.jpg'}")
@@ -187,8 +198,8 @@ def from_video(video: Path, out: Path, arm: str = "right", use: str = "steps", m
     cfg = pose.PoseConfig(arm=arm, hand_width_mm=hand_width_mm, close_ratio=close_ratio, open_ratio=open_ratio,
                           grip_events=events, t_start=start, t_end=end)  # fmt: skip
     print(f"1/3 tracking your {arm} arm in {video.name} (about as long as the video itself)")
-    res, steps = pose.video_to_demo(video, out_dir, scripted._chain(), cfg,
-                                    MarkerSetup.from_json(markers) if markers else None, CameraModel.from_json(camera) if camera else None)  # fmt: skip
+    setup = MarkerSetup.from_json(markers) if markers else None
+    res, steps = pose.video_to_demo(video, out_dir, scripted._chain(), cfg, setup, CameraModel.from_json(camera) if camera else None)
     for w in res.warnings:
         print("  warning:", w)
     print(f"  {len(res.demo)} samples, {res.demo.t[-1]:.1f} s, mode: {res.mode}" + (f", your arm scaled x{res.scale:.2f}" if res.mode == "body" else ""))
@@ -204,7 +215,7 @@ def from_video(video: Path, out: Path, arm: str = "right", use: str = "steps", m
             print("  your hand did not close and open again in the video. Looking at the object instead.")
         try:
             print(f"  finding {'the ' + obj if obj else 'the moved object'} with the object detector (about 5 s per picture on a laptop CPU)")
-            cfg.grip_events, track = grips_from_detector(video, out_dir, start, end, obj, res.tracked)
+            cfg.grip_events, track = grips_from_detector(video, out_dir, start, end, obj, res.tracked, setup)
             grip_from = f"the object detector, following the {track.name} (check object_track.jpg)"
         except (ImportError, NoObjectMotion) as e:
             print(f"  object detector: {e}")
@@ -220,7 +231,7 @@ def from_video(video: Path, out: Path, arm: str = "right", use: str = "steps", m
                     print("  film again with a flat open hand before and after the grip, or give the times by hand: --grips 3.0-8.5")
                     return 1
         if cfg.grip_events:
-            res, steps = pose.video_to_demo(video, out_dir, scripted._chain(), cfg, tracked=res.tracked)
+            res, steps = pose.video_to_demo(video, out_dir, scripted._chain(), cfg, setup, tracked=res.tracked)
             print("  steps: " + " > ".join(s["step"] for s in steps))
     print(f"  grasp and release taken from: {grip_from}")
     if track is not None:

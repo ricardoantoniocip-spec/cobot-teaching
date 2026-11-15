@@ -247,6 +247,8 @@ smaller, and the twin puts the block where your hand closed. Positions are not t
 For the real arm and real parts you need true positions: tape a printed ArUco marker on the table at a
 measured place and add `--markers markers.json --camera camera.json --hand-width-mm 85`
 (see product/teach/README.md for the two files). This mode is unit tested but not yet tried on a real video.
+Together with `--object "name"` the marker also gives the object's own place on the table in mm
+(pick and place spot, rough size), and the task file uses those instead of the hand's position.
 
 ### Limits of this first version
 
@@ -267,6 +269,10 @@ measured place and add `--markers markers.json --camera camera.json --hand-width
 - Scripted demo -> retarget -> twin: 20 of 20 random positions succeed (part 18-28 cm in front, 5-15 cm to the side).
   An earlier version without a fixed home pose got 17/20: failures at the far edge of the reach, where IK missed by
   2-3 cm or the block tipped over. Useful to know for the real cell.
+- **Correction, 15 Nov 2026:** those 20 "successes" ended with the block lying on its side. The score only checked
+  where the block ended. The gripper dragged the block over when it went up after the release. Fixed: the finger
+  now moves 8 mm off the part first, and a run fails when the part falls over. Re-run with the fix, same 20 positions: 20 of 20 upright in the zone, 10 mm typical from the centre (it was about 22 mm).
+  **Training data made before this date teaches the tipping release: make it again (`demos 50`) and retrain.**
 - Servo tracking in the twin: worst 0.3 degrees behind the command.
 - `to-lerobot`: made a LeRobotDataset v3 with lerobot 0.6.1, loaded it back, and ran 20 ACT training
   steps on CPU (loss falling). `evaluate` ran a trial with that 20-step policy (it fails, as expected).

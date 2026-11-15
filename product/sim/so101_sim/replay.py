@@ -34,6 +34,7 @@ class ReplayResult:
     part_end: np.ndarray
     place_err_mm: float
     success: bool
+    upright: bool = True  # the part stands as it started, not on its side
     episode: dict = field(repr=False, default_factory=dict)
 
     def report(self) -> str:
@@ -42,7 +43,8 @@ class ReplayResult:
             f"tool point vs IK, worst: {self.max_tcp_err_mm:.1f} mm\n"
             f"part moved {np.linalg.norm(self.part_end[:2] - self.part_start[:2]) * 1000:.0f} mm, "
             f"ends {self.place_err_mm:.0f} mm from the place zone centre\n"
-            f"task: {'SUCCESS' if self.success else 'FAIL'}"
+            + ("" if self.upright else "the part fell over\n")
+            + f"task: {'SUCCESS' if self.success else 'FAIL'}"
         )
 
 
@@ -93,6 +95,7 @@ def replay(
     place = data.site("place_zone").xpos
     place_err = float(np.linalg.norm(part_end[:2] - place[:2]))
     on_table = part_end[2] < scene.PART_SIZE[2]  # resting, not stuck in the gripper
+    upright = bool(data.body("part").xmat.reshape(3, 3)[2, 2] > 0.9)  # the part's own up axis still points up
     episode = {k: np.array(v) for k, v in ep.items() if v}
     return ReplayResult(
         max_track_err_deg=float(np.degrees(max(track))),
@@ -100,7 +103,8 @@ def replay(
         part_start=part_start,
         part_end=part_end,
         place_err_mm=place_err * 1000,
-        success=bool(place_err < place_tol_m and on_table),
+        success=bool(place_err < place_tol_m and on_table and upright),
+        upright=upright,
         episode=episode,
     )
 

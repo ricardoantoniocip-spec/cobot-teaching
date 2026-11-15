@@ -173,3 +173,70 @@ def test_twin_refuses_a_pick_where_the_block_is_not():
     task["steps"][3]["at"] = "elsewhere"
     with pytest.raises(ValueError, match="the block was last put down at place_1"):
         run_twin(parse_task(task), load_cell(here / "cells" / "so101_twin.json"))
+
+
+# ---------------------------------------------------------------- true positions from a table marker
+
+
+def _camera_looking_at_table(cam_pos):
+    from retarget.kinematics import make_transform
+
+    z = np.array([0.0, 0.0, 0.02]) - cam_pos
+    z /= np.linalg.norm(z)
+    x = np.cross(z, [0.0, 0.0, 1.0])
+    x /= np.linalg.norm(x)
+    return np.linalg.inv(make_transform(np.column_stack([x, np.cross(z, x), z]), np.asarray(cam_pos, dtype=float)))
+
+
+def _box_of(size, at, yaw, cam, cam_to_table):
+    c, s = np.cos(yaw), np.sin(yaw)
+    pts = np.array([[at[0] + c * a - s * b, at[1] + s * a + c * b, z] for a in (-size[0] / 2, size[0] / 2) for b in (-size[1] / 2, size[1] / 2) for z in (0, size[2])])
+    pc = (cam_to_table @ np.c_[pts, np.ones(8)].T).T[:, :3]
+    uv = (cam.matrix @ pc.T).T
+    uv = uv[:, :2] / uv[:, 2:]
+    return (uv[:, 0].min(), uv[:, 1].min(), uv[:, 0].max(), uv[:, 1].max())
+
+
+def test_box_on_table_gives_the_objects_place_in_mm():
+    from retarget.kinematics import make_transform
+    from retarget.table import box_on_table
+    from retarget.video import CameraModel
+
+    cam = CameraModel.guess(1280, 720)
+    base_to_table = make_transform(np.eye(3), np.array([0.25, 0.0, 0.0]))
+    errs, h_errs = [], []
+    for cam_pos in ([0.0, -0.6, 0.5], [0.3, -0.5, 0.35]):
+        c2t = _camera_looking_at_table(np.array(cam_pos))
+        for size in ((0.02, 0.02, 0.04), (0.04, 0.04, 0.08)):
+            for at, yaw in (((0.0, 0.0), 0.0), ((0.1, 0.05), 0.5), ((-0.12, -0.05), 0.8)):
+                r = box_on_table(_box_of(size, at, yaw, cam, c2t), cam, c2t, base_to_table)
+                errs.append(np.linalg.norm(r.centre_base_m[:2] - (0.25 + at[0], at[1])) * 1000)
+                h_errs.append(abs(r.height_m - size[2]) * 1000)
+                assert abs(r.centre_base_m[2]) < 1e-9
+    assert np.median(errs) < 8 and max(errs) < 15, errs  # small parts: within 15 mm from the box alone
+    assert max(h_errs) < 15, h_errs
+
+
+def test_table_positions_reach_the_task_file():
+    from retarget.kinematics import make_transform
+    from retarget import objects
+    from retarget.objects import add_table_positions
+    from retarget.video import CameraModel
+    from taskprog.from_steps import steps_to_task
+
+    cam = CameraModel.guess(1280, 720)
+    c2t = _camera_looking_at_table(np.array([0.0, -0.6, 0.5]))
+    base_to_table = make_transform(np.eye(3), np.array([0.25, 0.0, 0.0]))
+    size = (0.03, 0.03, 0.05)
+    mv = objects.Move(2.0, 5.0, _box_of(size, (0.0, 0.08), 0.0, cam, c2t), _box_of(size, (0.0, -0.08), 0.0, cam, c2t), True)
+    tr = objects.ObjectTrack("bracket", 0.8, np.array([0.0]), [None], [mv])
+    add_table_positions(tr, cam, c2t, base_to_table)
+    assert abs(mv.pick_xyz_mm[0] - 250) < 10 and abs(mv.pick_xyz_mm[1] - 80) < 10
+    assert abs(mv.size_mm[0] - 30) < 8 and abs(mv.size_mm[2] - 50) < 10
+    steps = {"mode": "body", "object": {**tr.to_json(), "named_by": "you"}, "steps": [
+        {"step": "reach", "t_start": 0.0, "t_end": 2.0}, {"step": "grasp", "t_start": 2.0, "t_end": 2.3, "to_xyz": [0.2, 0.1, 0.03]},
+        {"step": "move", "t_start": 2.3, "t_end": 5.0}, {"step": "release", "t_start": 5.0, "t_end": 5.3, "to_xyz": [0.2, -0.1, 0.03]}]}  # fmt: skip
+    task = steps_to_task(steps)
+    assert task["locations"]["pick_1"]["xyz_mm"] == mv.pick_xyz_mm and task["locations"]["place_1"]["xyz_mm"] == mv.place_xyz_mm
+    assert task["objects"]["bracket"]["size_mm"] == mv.size_mm
+    assert any("table marker" in r for r in task["review"]) and not any("body mode" in r for r in task["review"])

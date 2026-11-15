@@ -21,7 +21,7 @@ No market numbers are used, so there are no source links.
 | Body and hand tracking from a plain video | Works | Take 1: arm in 100%, hand in 82% of pictures (live run tonight) |
 | Object found by name, followed, grasp and release read from it | Works on take 1 | 37 of 37 looks, both moves found (PR #18) |
 | Demo cut into steps, task file, URScript | Works | Take 1, kitting tray and machine tending pass URSim |
-| SO-101 twin, training data export, ACT training loop | Works in sim | 20 of 20 scripted demos; ACT trained, 20-trial score still open |
+| SO-101 twin, training data export, ACT training loop | Works in sim, with a correction | scripted demos re-scored 15 Nov after a tipping fault (see 3b); ACT must be retrained on new data |
 | Live mode: your arm leads, the twin follows, all tracking shown | New tonight | `python -m so101_sim live`, tested on take 1 and made-up data |
 
 ## Shortfalls, most important first
@@ -30,15 +30,17 @@ No market numbers are used, so there are no source links.
 Body mode scales your arm onto the robot. Nothing is in true millimetres, so no program made today
 would put a real gripper on a real part. One camera is also weak in depth (a centimetre or two).
 **Fix:** a printed marker on the table gives the camera's place; the object's box then gives the pick
-and place spot on the table in mm. Later a second camera or a depth camera for height.
+and place spot on the table in mm. Built on 15 Nov (`from-video --object ... --markers ...`), tested on
+geometry only (typical 7 mm, worst 31 mm). Needs one real take with a printed marker. Later a second
+camera or a depth camera for height.
 
 ### 2. The robot is blind at run time
 The generated program goes to fixed taught positions. That is exactly what normal programming does,
 and it is the cheap case. Our offer is "hard tasks with varying parts". For that the robot must
-**look before each pick**. The twin shows it already: the second pick of take 1 misses because the
-part stands 12 mm off after the first place.
-**Fix:** a "locate" step in the task file (camera finds the part, pick position is corrected),
-first in the twin, then on the SO-101, then as a camera call in URScript.
+**look before each pick**. The twin shows it: with a look before the second pick, take 1's two
+moves succeed; without it they fail, because the part stands 19 mm from where the program expects it.
+**Fix:** built in the twin on 15 Nov (`taskprog twin --look`, 7 of 8 random two-move tasks against
+0 of 8). Still to do: the same on the SO-101 with a real camera, then as a camera call in URScript.
 
 ### 3. One video is not a test
 Every number we have is from take 1, filmed on a sofa with a juice carton. We do not know how often
@@ -46,6 +48,12 @@ the pipeline works.
 **Fix:** a fixed test set of about 20 takes on a table (small part, shiny part, two parts, bad
 light, left arm), each with the true grasp time and place written down, and one command that scores
 all of them. Every change is then judged by that score, not by eye.
+
+### 3b. Our own score was wrong once already
+On 15 Nov the twin turned out to count a run as a success while the block lay on its side: the
+gripper tipped it over at every release, in all 20 "successful" scripted demos and in the ACT
+training data made from them. It is fixed, and the twin now checks that the part stands. The
+lesson is the point of item 3: a score needs to check what a person would check.
 
 ### 4. Nothing has touched hardware
 `retarget/robot.py` has never driven a servo. The twin's zero pose is assumed to match LeRobot's
@@ -112,8 +120,8 @@ Steps 2 and 5 exist as command-line tools. Steps 1, 3, 4, 6 and 7 are the missin
 
 | # | What | Why first | Who |
 |---|---|---|---|
-| 1 | Table marker: true mm for pick and place | everything real depends on it | Claude builds, you film one take with a printed marker |
-| 2 | Look before each pick, in the twin | closes the gap between offer and build | Claude |
+| 1 | Table marker: true mm for pick and place | everything real depends on it | built 15 Nov; you film one take with a printed marker |
+| 2 | Look before each pick | closes the gap between offer and build | built in the twin 15 Nov; real camera next |
 | 3 | Test set of 20 takes + one scoring command | stops guessing | you film (1 hour), Claude builds the scorer |
 | 4 | CI: tests run on every pull request | cheap, protects all of the above | Claude |
 | 5 | Real SO-101: power-up, twin check, replay, live follow | first hardware proof, a 60 s video for interviews | you, with the kit |

@@ -387,3 +387,19 @@ def test_old_0_1_files_still_load():
     cell = json.loads((HERE / "cells" / "ur5e_table.json").read_text())
     assert cell["format"] == "cobot-cell/0.1"
     parse_cell(cell)
+
+
+def test_twin_two_moves_need_a_look_before_the_second_pick():
+    pytest.importorskip("mujoco")
+    from taskprog.twin import run_twin
+
+    doc = json.loads((HERE / "examples" / "take1_object_detector" / "task.json").read_text())
+    try:
+        _, blind = run_twin(parse_task(doc), SO)
+        notes: list[str] = []
+        _, looked = run_twin(parse_task(doc), SO, look=True, notes=notes)
+    except OSError as e:
+        pytest.skip(f"twin model not available: {e}")
+    assert not blind.success  # the block is not where the program expects it; the blind second pick knocks it over
+    assert looked.success and looked.upright, looked.report()
+    assert len(notes) == 1 and "pick 2: looked first" in notes[0] and "fallen over" not in notes[0]

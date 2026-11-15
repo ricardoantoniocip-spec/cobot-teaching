@@ -70,6 +70,10 @@ class Move:
     pick_box: tuple[float, float, float, float]
     place_box: tuple[float, float, float, float]
     hand_on_object: bool | None = None  # None = no hand track was given
+    # Only with a table marker (retarget.table): true positions in the robot base frame, object centre on the table top
+    pick_xyz_mm: list[float] | None = None
+    place_xyz_mm: list[float] | None = None
+    size_mm: list[float] | None = None  # rough width, depth (taken equal to the width), height
 
     @property
     def pick_px(self) -> tuple[float, float]:
@@ -100,9 +104,27 @@ class ObjectTrack:
             "name": self.name, "score": round(self.score, 2), "seen_fraction": round(self.seen_fraction, 2),
             "moves": [{"t_grasp": round(m.t_grasp, 2), "t_release": round(m.t_release, 2), "pick_box_px": r(m.pick_box),
                        "place_box_px": r(m.place_box), "pick_px": r(m.pick_px), "place_px": r(m.place_px),
-                       "hand_on_object": m.hand_on_object} for m in self.moves],
+                       "hand_on_object": m.hand_on_object,
+                       **({"pick_xyz_mm": m.pick_xyz_mm, "place_xyz_mm": m.place_xyz_mm, "size_mm": m.size_mm} if m.pick_xyz_mm else {})}
+                      for m in self.moves],
             "notes": self.notes,
         }  # fmt: skip
+
+
+def add_table_positions(track: ObjectTrack, cam, cam_to_table: np.ndarray, base_to_table: np.ndarray) -> None:
+    """Fill each move's true pick and place position (mm, robot base frame) from its boxes and the table marker."""
+    from .table import box_on_table
+
+    for m in track.moves:
+        try:
+            a, b = box_on_table(m.pick_box, cam, cam_to_table, base_to_table), box_on_table(m.place_box, cam, cam_to_table, base_to_table)
+        except ValueError as e:
+            track.notes.append(f"no table position for the move at {m.t_grasp:.1f} s: {e}")
+            continue
+        m.pick_xyz_mm = [round(float(v) * 1000, 1) for v in a.centre_base_m]
+        m.place_xyz_mm = [round(float(v) * 1000, 1) for v in b.centre_base_m]
+        w, h = (a.width_m + b.width_m) / 2 * 1000, (a.height_m + b.height_m) / 2 * 1000
+        m.size_mm = [round(w), round(w), round(h)]
 
 
 # ---------------------------------------------------------------- the detector (needs torch + transformers)
