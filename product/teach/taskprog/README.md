@@ -135,7 +135,7 @@ docker stop ursim
 
 ## Tests
 
-`python -m pytest -q tests` (92 tests, about 50 s; the twin test needs mujoco and skips without it).
+`python -m pytest -q tests` (93 tests, about 50 s; the twin test needs mujoco and skips without it).
 
 ## Demo video
 
