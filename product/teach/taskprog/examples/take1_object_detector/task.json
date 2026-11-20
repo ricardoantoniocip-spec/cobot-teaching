@@ -1,0 +1,108 @@
+{
+  "format": "cobot-task/0.2",
+  "name": "demo_task",
+  "description": "",
+  "units": {
+    "length": "mm",
+    "angle": "deg",
+    "time": "s"
+  },
+  "source": {
+    "video": "take1.mp4",
+    "steps_mode": "body",
+    "arm": "right",
+    "labelled_by": "nobody"
+  },
+  "objects": {
+    "juice_carton": {
+      "size_mm": [20.0, 20.0, 40.0],
+      "grasp_height_mm": 20.0,
+      "description": "named by you; detector score 0.78"
+    }
+  },
+  "locations": {
+    "pick_1": {
+      "xyz_mm": [165.8, 49.5, 0.0],
+      "yaw_deg": 0.0,
+      "note": "from demo step 1"
+    },
+    "place_1": {
+      "xyz_mm": [248.7, -70.8, 0.0],
+      "yaw_deg": 0.0,
+      "note": "from demo step 3"
+    },
+    "place_2": {
+      "xyz_mm": [233.2, -37.8, 0.0],
+      "yaw_deg": 0.0,
+      "note": "from demo step 7"
+    }
+  },
+  "defaults": {
+    "approach_mm": 50,
+    "travel_height_mm": 100,
+    "grip_time_s": 0.5,
+    "speed": "normal"
+  },
+  "steps": [
+    {
+      "do": "home",
+      "label": "start at home",
+      "id": 1
+    },
+    {
+      "do": "pick",
+      "object": "juice_carton",
+      "at": "pick_1",
+      "label": "pick (unlabelled)",
+      "demo": {
+        "t_start": 0.0,
+        "t_end": 4.533
+      },
+      "id": 2
+    },
+    {
+      "do": "place",
+      "object": "juice_carton",
+      "at": "place_1",
+      "label": "place (unlabelled)",
+      "demo": {
+        "t_start": 4.533,
+        "t_end": 7.733
+      },
+      "id": 3
+    },
+    {
+      "do": "pick",
+      "object": "juice_carton",
+      "at": "place_1",
+      "label": "pick (unlabelled)",
+      "demo": {
+        "t_start": 7.733,
+        "t_end": 11.567
+      },
+      "id": 4
+    },
+    {
+      "do": "place",
+      "object": "juice_carton",
+      "at": "place_2",
+      "label": "place (unlabelled)",
+      "demo": {
+        "t_start": 11.567,
+        "t_end": 14.367
+      },
+      "id": 5
+    },
+    {
+      "do": "home",
+      "label": "back to home",
+      "id": 6
+    }
+  ],
+  "review": [
+    "object size 20 x 20 x 40 mm and grasp height 20 mm are assumed, not measured",
+    "heights flattened to one table (--flat-table): the demo's measured heights were not used",
+    "yaw of every location is 0: the video app does not measure object orientation yet",
+    "positions come from body mode (arm scaled to the SO-101, not true millimetres)"
+  ]
+}

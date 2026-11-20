@@ -22,6 +22,8 @@ from retarget.kinematics import tool_down as _tool_down  # noqa: E402
 # inner side of the part.
 FINGER_HALF_THICKNESS = 0.006  # m
 TIP_HEIGHT_ABOVE_TABLE = 0.008  # m, fingers stop this high above the table
+BACK_OFF = 0.008  # m: after opening, the finger moves this far off the part (towards the base) before going up.
+# Without it the part leans on the finger, is dragged up with it and falls over (found 15 Nov 2026).
 APPROACH_HEIGHT = 0.05  # m above the grasp for the approach and the retreat
 HOME = np.array([0.18, 0.0, 0.06])  # tool point at the start and end of every demo
 
@@ -56,6 +58,8 @@ def pick_place_demo(part_xy, place_xy, part_size=scene.PART_SIZE, hz: float = 30
     place = grasp_point(place_xy, part_size)
     place[2] += 0.004  # release a little higher, so the part is not pushed into the table
     up = np.array([0.0, 0.0, APPROACH_HEIGHT])
+    clear = place.copy()
+    clear[:2] -= place[:2] / np.linalg.norm(place[:2]) * BACK_OFF
     # (position, yaw, grip at the end of the segment)
     keys = [
         (HOME, 0),
@@ -66,7 +70,8 @@ def pick_place_demo(part_xy, place_xy, part_size=scene.PART_SIZE, hz: float = 30
         (place + up, 1),
         (place, 1),
         (place, 0),  # open in place
-        (place + up, 0),
+        (clear, 0),  # finger off the part
+        (clear + up, 0),
         (HOME, 0),
     ]
     yaw = lambda p: np.arctan2(p[1], p[0])  # noqa: E731  (HOME has y = 0, so yaw 0)

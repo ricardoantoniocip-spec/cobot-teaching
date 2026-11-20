@@ -6,6 +6,7 @@
   convert  DEMO.csv OUT.csv              hand demo -> SO-101 joint trajectory (no robot needed)
   check    --port COM5                   read the arm's joints, print the tool pose (FK check)
   replay   TRAJ.csv --port COM5          play a trajectory on the follower (asks to confirm)
+  bringup  --port COM5                   first power-up: checks every joint against the model, saves the mapping, one slow move
 """
 
 from __future__ import annotations
@@ -58,6 +59,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--max-speed-deg", type=float, default=30.0)
     s.add_argument("--yes", action="store_true", help="skip the typed confirmation (not recommended)")
 
+    s = sub.add_parser("bringup")
+    s.add_argument("--port", required=True)
+    s.add_argument("--robot-id", default="follower", help="the id used in lerobot-calibrate")
+
     a = p.parse_args(argv)
     chain = SerialChain.from_urdf()
 
@@ -101,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
 
         robot = connect(a.port)
         try:
-            q = current_joints(robot, JointMapping())
+            q = current_joints(robot, JointMapping.load())
             for j, v in zip(ARM_JOINTS, q):
                 print(f"{j:14s} {np.degrees(v):7.1f} deg")
             tool = chain.fk(q)
@@ -119,11 +124,20 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         robot = connect(a.port)
         try:
-            play(robot, traj, JointMapping(), np.radians(a.max_speed_deg))
+            play(robot, traj, JointMapping.load(), np.radians(a.max_speed_deg))
         except KeyboardInterrupt:
             print("stopped by user")
         finally:
             # Note: LeRobot turns torque off on disconnect, so the arm goes limp. Support it.
+            robot.disconnect()
+    elif a.cmd == "bringup":
+        from .bringup import bringup
+        from .robot import connect
+
+        robot = connect(a.port, a.robot_id)
+        try:
+            return bringup(robot, chain)
+        finally:
             robot.disconnect()
     return 0
 

@@ -1,0 +1,6 @@
+# Only for finding the object by name (retarget.objects, so101_sim from-video --object "...").
+# CPU works (about 5 s per picture); a CUDA build of torch is about 10 times faster.
+# The model (LLMDet tiny, Apache-2.0, about 700 MB) downloads from Hugging Face on first use.
+torch>=2.4
+transformers>=4.55
+pillow

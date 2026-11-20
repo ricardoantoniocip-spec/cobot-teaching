@@ -69,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
             s.add_argument("out", type=Path)
         if name == "twin":
             s.add_argument("--video", type=Path)
+            s.add_argument("--look", action="store_true", help="look where the part really stands before every pick after the first")
         if name == "ursim":
             s.add_argument("--host", default="localhost")
             s.add_argument("--save", type=Path, help="also write the program here")
@@ -151,7 +152,10 @@ def _run(args) -> int:
     if args.cmd == "twin":
         from .twin import run_twin
 
-        _, res = run_twin(task, cell, args.video)
+        notes: list[str] = []
+        _, res = run_twin(task, cell, args.video, look=args.look, notes=notes)
+        for n in notes:
+            print("  " + n)
         print("  " + res.report().replace("\n", "\n  "))
         return 0 if res.success else 1
     return 2

@@ -46,10 +46,10 @@ def synthetic_operator_frames(pick_body=(0.40, 0.22, -0.40), place_body=(0.40, -
     """Landmarks of a made-up operator doing a pick and place, as the pose tracker would give them.
 
     For tests without a real video. The operator faces the camera. pick_body / place_body are the
-    pinch point relative to the right shoulder in the operator's axes (forward, left, up), metres.
+    grasp point relative to the right shoulder in the operator's axes (forward, left, up), metres.
     Returns a list of pose.ArmFrame.
     """
-    from .pose import ArmFrame
+    from .pose import ArmFrame, grasp_point
 
     rng = np.random.default_rng(seed)
     axes = np.array([[0.0, 1.0, 0.0], [0.0, 0.0, -1.0], [-1.0, 0.0, 0.0]])  # columns: forward, left, up in camera axes
@@ -69,15 +69,10 @@ def synthetic_operator_frames(pick_body=(0.40, 0.22, -0.40), place_body=(0.40, -
             a = 0.5 - 0.5 * np.cos(np.pi * k / n)
             closed = g1 if g1 != g0 and k > n // 2 else g0
             pinch = shoulder + axes @ (p0 + a * (p1 - p0)) + rng.normal(0, noise_m, 3)
-            # Hand: 21 points, fingers pointing forward and down. Only wrist, thumb tip, index knuckle,
-            # index tip and little-finger knuckle matter to the code.
             fwd, side, down = axes @ np.array([0.8, 0.0, -0.6]), axes[:, 1], axes @ np.array([-0.6, 0.0, -0.8])
-            gap = 0.03 if closed else 0.10
-            wrist = pinch - 0.13 * fwd
-            hand = wrist + np.outer(np.linspace(0, 0.12, 21), fwd) + np.outer(np.sin(np.arange(21)), side) * 0.02
-            hand[0] = wrist
-            hand[5], hand[17] = wrist + 0.09 * fwd + 0.03 * side, wrist + 0.08 * fwd - 0.04 * side
-            hand[4], hand[8] = pinch + gap / 2 * down, pinch - gap / 2 * down
+            hand = _hand_points(bool(closed), fwd, side, down)
+            hand += pinch - grasp_point(hand)  # put the grasp point where the demo wants it
+            wrist = hand[0]
             w = world.copy()
             w[16] = wrist
             d = wrist - shoulder
@@ -86,3 +81,21 @@ def synthetic_operator_frames(pick_body=(0.40, 0.22, -0.40), place_body=(0.40, -
             w[14] = shoulder + d / 2 + drop * np.array([0.0, 1.0, 0.0])
             frames.append(ArmFrame(t=len(frames) / hz, pose_world=w, pose_vis=np.ones(33), pose_px=np.zeros((33, 2)), hand_world=hand - hand.mean(axis=0), hand_px=np.zeros((21, 2))))
     return frames
+
+
+def _hand_points(closed: bool, fwd: np.ndarray, side: np.ndarray, down: np.ndarray) -> np.ndarray:
+    """21 hand landmarks (MediaPipe numbering) with the wrist at the origin. Open: fingers straight
+    along fwd. Closed: the four fingers curl towards the palm (down) and the thumb stays out to the side, as on a whole-hand grasp."""
+    hand = np.zeros((21, 3))
+    lengths = (0.040, 0.025, 0.020)
+    curl = np.radians([55.0, 125.0, 190.0]) if closed else np.zeros(3)
+    for f, off in enumerate((0.03, 0.01, -0.01, -0.03)):
+        p = 0.09 * fwd + off * side
+        hand[5 + 4 * f] = p
+        for k in range(3):
+            p = p + lengths[k] * (np.cos(curl[k]) * fwd + np.sin(curl[k]) * down)
+            hand[6 + 4 * f + k] = p
+    thumb_tip = (0.04 * fwd + 0.07 * side + 0.02 * down) if closed else (0.07 * fwd + 0.08 * side)
+    for k in range(1, 5):
+        hand[k] = thumb_tip * k / 4
+    return hand

@@ -17,7 +17,7 @@ record on the phone -> scan (on the phone + Claude looks at 6 frames) -> send ->
 | Picture size | video resolution | Check |
 | Light, sharpness, camera kept still | 6 frames, measured on the phone | Fix if very dark, else Check |
 | Whole arm in view, hand visible, a pick and a place shown | Claude looks at the 6 frames | Fix |
-| Thumb and index grip, same flat surface, enough light | Claude looks at the 6 frames | Check |
+| Open hand at start and end, hand closes on the part (any grip), same flat surface, enough light | Claude looks at the 6 frames | Check |
 
 The scan is a filter, not the real tracker. The real check is `so101_sim from-video` after the video arrives.
 
