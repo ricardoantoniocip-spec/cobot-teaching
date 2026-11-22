@@ -14,6 +14,7 @@ Current build (2 Nov 2026 to 24 Jan 2027)
 
 Rules
 - Skills: train-policy (record, train, evaluate), robotics-testing (tests), ik-check (ask Kai for kinematics, Elena for wiring, Vera for model choice).
+- Engineering skills: systematic-debugging for any bug or failing test, property-based-testing for IK, retargeting, task files and the URScript generator, verification-before-completion before saying anything works. Run /code-review before asking Ricardo to merge. Guide: docs/engineering-skills.md.
 - Code lives in product/teach (pipeline) and product/sim (experiments, MuJoCo if simulation is needed). Python 3.11, type hints, small functions, a test per module.
 - Prefer existing open tools (LeRobot, ROS 2, ahrs, OpenCV ArUco) over writing models from scratch.
 - Anything that moves real hardware must have a speed limit and an explicit confirmation step.
