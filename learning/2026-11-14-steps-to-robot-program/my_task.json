@@ -1,0 +1,22 @@
+{
+  "format": "cobot-task/0.2",
+  "name": "fill_small_tray",
+  "description": "Take four parts from the feeder, fill a 2 x 2 tray, then tell the line the tray is full.",
+  "objects": {
+    "part": {"size_mm": [30, 30, 40], "grasp_height_mm": 25}
+  },
+  "locations": {
+    "feeder": {"xyz_mm": [100, -200, 0], "note": "next part always here"},
+    "tray": {"xyz_mm": [150, 100, 0], "note": "slot 1 nearest the robot", "grid": {"count": [2, 2], "pitch_mm": [60, 60]}}
+  },
+  "signals": {"tray_full": "output"},
+  "steps": [
+    {"do": "home"},
+    {"do": "repeat", "times": 4, "steps": [
+      {"do": "pick", "object": "part", "at": "feeder", "label": "take the next part"},
+      {"do": "place", "object": "part", "at": "tray", "slot": "next", "label": "next free slot"}
+    ]},
+    {"do": "set_output", "signal": "tray_full", "pulse_s": 0.5, "label": "tell the line"},
+    {"do": "home"}
+  ]
+}
