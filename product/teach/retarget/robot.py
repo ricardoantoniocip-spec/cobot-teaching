@@ -11,13 +11,17 @@ joint once --check shows a difference.
 
 from __future__ import annotations
 
+import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 import numpy as np
 
 from .demo import JointTrajectory
 from .kinematics import ARM_JOINTS
+
+MAPPING_FILE = Path(__file__).resolve().parents[1] / "so101_mapping.json"  # written by `python -m retarget bringup`
 
 
 @dataclass
@@ -26,6 +30,17 @@ class JointMapping:
     offsets_deg: dict[str, float] = field(default_factory=lambda: {j: 0.0 for j in ARM_JOINTS})
     gripper_open_pct: float = 40.0
     gripper_closed_pct: float = 5.0
+
+    @classmethod
+    def load(cls, path: Path | None = None) -> "JointMapping":
+        """The mapping saved by bringup, or the default (all signs +1, no offsets) when there is none yet."""
+        path = path or MAPPING_FILE
+        return cls(**json.loads(path.read_text())) if path.exists() else cls()
+
+    def save(self, path: Path | None = None) -> Path:
+        path = path or MAPPING_FILE
+        path.write_text(json.dumps(asdict(self), indent=2))
+        return path
 
     def to_action(self, q: np.ndarray, gripper_open: float) -> dict[str, float]:
         action = {f"{j}.pos": self.signs[j] * float(np.degrees(v)) + self.offsets_deg[j] for j, v in zip(ARM_JOINTS, q)}

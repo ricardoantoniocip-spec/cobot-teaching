@@ -1,6 +1,6 @@
 """Track the operator's arm in a plain video (no markers on the body) and turn it into a hand demo.
 
-    video -> MediaPipe pose + hand landmarks -> arm joints, pinch point, grip -> HandDemo (demo.csv)
+    video -> MediaPipe pose + hand landmarks -> arm joints, grasp point, hand open or closed -> HandDemo (demo.csv)
 
 Two ways to put the hand into the robot's frame:
 
@@ -14,7 +14,7 @@ Two ways to put the hand into the robot's frame:
       The hand's distance from the camera comes from its size in the image. True scale,
       expect errors of a few centimetres with one camera.
 
-The robot follows the pinch point (between thumb tip and index tip), not the arm angles:
+The robot follows the grasp point (between the thumb tip and the fingertips), not the arm angles:
 a human arm and a 5-joint SO-101 do not share joints. Shoulder, elbow and wrist are still
 tracked and saved (arm_track.csv, tracked.mp4) so you can see and check the tracking.
 """
@@ -67,8 +67,10 @@ class ArmFrame:
 @dataclass
 class PoseConfig:
     arm: str = "right"  # which of YOUR arms does the task
-    close_ratio: float = 0.5  # thumb-index gap / palm length below this = gripping
-    open_ratio: float = 0.7  # ... above this = released (the gap in between avoids flicker)
+    close_ratio: float = 0.78  # whole-hand openness below this = hand closed = holding the part
+    open_ratio: float = 0.84  # ... above this = hand open = released (the gap in between avoids flicker)
+    min_hold_s: float = 0.4  # a closed hand shorter than this is noise, not a grasp
+    clear_below: float = 0.70  # a grasp only counts if the hand is clearly closed: typical openness while closed under this
     smooth_s: float = 0.2  # moving average on the hand path
     max_gap_s: float = 0.5  # longer gaps without a hand are reported
     out_hz: float = 30.0
@@ -92,6 +94,7 @@ class PoseResult:
     mode: str = "body"
     scale: float = 1.0  # robot metres per human metre (body mode)
     video_t0: float = 0.0  # video time (s) of the demo's t = 0: demo and step times start at the first tracked frame
+    tracked: tuple | None = None  # (frames, camera) from track_video, so the grip can be redone without tracking again
 
 
 # ---------------------------------------------------------------- detectors
@@ -218,10 +221,12 @@ def draw_overlay(img: np.ndarray, f: ArmFrame, arm: str) -> np.ndarray:
     if f.hand_px is not None:
         for a, b in HAND_BONES:
             cv2.line(out, tuple(int(v) for v in f.hand_px[a]), tuple(int(v) for v in f.hand_px[b]), (80, 220, 80), s)
-        ratio = grip_ratio(f.hand_world)
-        pinch = tuple(int(v) for v in (f.hand_px[H_THUMB_TIP] + f.hand_px[H_INDEX_TIP]) / 2)
-        cv2.circle(out, pinch, 5 * s, (0, 0, 255) if ratio < 0.5 else (255, 255, 255), -1)
-        cv2.putText(out, f"pinch {ratio:.2f}", (pinch[0] + 6 * s, pinch[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.45 * s, (255, 255, 255), s)
+        openness = hand_openness(f.hand_world)
+        closed, half = openness < 0.70, openness < 0.78  # same numbers as PoseConfig.clear_below and close_ratio
+        word = "CLOSED" if closed else "half closed" if half else "open"
+        dot = tuple(int(v) for v in grasp_point(f.hand_px))
+        cv2.circle(out, dot, 5 * s, (0, 0, 255) if closed else (255, 255, 255), -1)
+        cv2.putText(out, f"hand {word} {openness:.2f}", (dot[0] + 6 * s, dot[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.45 * s, (0, 0, 255) if closed else (255, 255, 255), s)
     return out
 
 
@@ -235,21 +240,43 @@ def elbow_angle_deg(shoulder: np.ndarray, elbow: np.ndarray, wrist: np.ndarray) 
     return float(np.degrees(np.arccos(np.clip(c, -1, 1))))
 
 
-def grip_ratio(hand_world: np.ndarray) -> float:
-    """Gap between thumb tip and index tip, divided by palm length. About 1 open, under 0.5 gripping."""
-    palm = np.linalg.norm(hand_world[H_INDEX_MCP] - hand_world[H_WRIST]) + 1e-9
-    return float(np.linalg.norm(hand_world[H_THUMB_TIP] - hand_world[H_INDEX_TIP]) / palm)
+FINGERS = ((5, 6, 7, 8), (9, 10, 11, 12), (13, 14, 15, 16), (17, 18, 19, 20))  # knuckle, two joints, tip: index to little finger
 
 
-def grip_states(ratios: np.ndarray, close_ratio: float, open_ratio: float) -> np.ndarray:
-    """0/1 per sample, with two thresholds so the grip does not flicker."""
-    out, closed = np.zeros(len(ratios)), False
-    for i, r in enumerate(ratios):
-        if closed and r > open_ratio:
+def hand_openness(hand_world: np.ndarray) -> float:
+    """How open the whole hand is, 0 to 1, from the four fingers (not the thumb).
+
+    For each finger: distance from the wrist to the fingertip, divided by the length of the finger
+    laid out straight. A flat open hand gives about 0.9, a fist about 0.45 (measured on photos).
+    The hand is "closed" when the fingers curl around a part, whichever fingers do the gripping.
+    """
+    h = hand_world
+    vals = []
+    for m, p, d, t in FINGERS:
+        straight = np.linalg.norm(h[m] - h[H_WRIST]) + np.linalg.norm(h[p] - h[m]) + np.linalg.norm(h[d] - h[p]) + np.linalg.norm(h[t] - h[d])
+        vals.append(np.linalg.norm(h[t] - h[H_WRIST]) / (straight + 1e-9))
+    return float(np.mean(vals))
+
+
+def grasp_point(hand: np.ndarray) -> np.ndarray:
+    """The point the robot's gripper follows: halfway between the thumb tip and the index and middle fingertips."""
+    return (hand[H_THUMB_TIP] + (hand[H_INDEX_TIP] + hand[12]) / 2) / 2
+
+
+def grip_states(openness: np.ndarray, close_below: float, open_above: float, min_hold: int = 1) -> np.ndarray:
+    """0/1 per sample: 1 while the hand is closed. Two thresholds so it does not flicker, and a
+    closed stretch shorter than min_hold samples is dropped."""
+    out, closed = np.zeros(len(openness)), False
+    for i, r in enumerate(openness):
+        if closed and r > open_above:
             closed = False
-        elif not closed and r < close_ratio:
+        elif not closed and r < close_below:
             closed = True
         out[i] = float(closed)
+    edges = np.flatnonzero(np.diff(np.concatenate([[0.0], out, [0.0]])))
+    for a, b in zip(edges[::2], edges[1::2]):
+        if b - a < min_hold:
+            out[a:b] = 0.0
     return out
 
 
@@ -327,8 +354,8 @@ def frames_to_demo(frames: list[ArmFrame], chain: SerialChain, cfg: PoseConfig |
         elbow_deg[i] = elbow_angle_deg(f.pose_world[j["shoulder"]], f.pose_world[j["elbow"]], f.pose_world[j["wrist"]])
         if f.hand_world is not None:
             hw = f.hand_world
-            pinch_b[i] = wrist_b[i] + ((hw[H_THUMB_TIP] + hw[H_INDEX_TIP]) / 2 - hw[H_WRIST]) @ axes
-            ratios[i] = grip_ratio(hw)
+            pinch_b[i] = wrist_b[i] + (grasp_point(hw) - hw[H_WRIST]) @ axes
+            ratios[i] = hand_openness(hw)
 
     # --- pinch point in the robot base frame
     scale = 1.0
@@ -344,7 +371,7 @@ def frames_to_demo(frames: list[ArmFrame], chain: SerialChain, cfg: PoseConfig |
             if f.hand_world is None or f.cam_to_table is None:
                 continue
             cam_hand = hand_in_camera(f.hand_world, f.hand_px, cam, hand_scale)
-            pinch_cam = cam_hand @ np.append((f.hand_world[H_THUMB_TIP] + f.hand_world[H_INDEX_TIP]) / 2 * hand_scale, 1.0)
+            pinch_cam = cam_hand @ np.append(grasp_point(f.hand_world) * hand_scale, 1.0)
             pos[i] = (markers.base_to_table @ np.linalg.inv(f.cam_to_table) @ pinch_cam)[:3]
         if np.isfinite(pos[:, 0]).sum() < 5:
             raise RuntimeError("The table marker was not seen together with the hand. Check the marker id, size and lighting.")
@@ -381,7 +408,15 @@ def frames_to_demo(frames: list[ArmFrame], chain: SerialChain, cfg: PoseConfig |
     if cfg.grip_events:
         grip = np.array([float(any(c <= ti < o for c, o in cfg.grip_events)) for ti in t])
     else:
-        grip = grip_states(r_f, cfg.close_ratio, cfg.open_ratio)
+        grip = grip_states(r_f, cfg.close_ratio, cfg.open_ratio, max(1, int(round(cfg.min_hold_s / dt))))
+        # A half-closed hand is not a grasp. Fingers around a wide part stay almost straight and hover
+        # at the threshold, which gave grasps and releases in mid-air. Count only clearly closed hands.
+        edges = np.flatnonzero(np.diff(np.concatenate([[0.0], grip, [0.0]])))
+        for a, b in zip(edges[::2], edges[1::2]):
+            typical = float(np.median(r_f[a:b]))
+            if typical > cfg.clear_below:
+                grip[a:b] = 0.0
+                warnings.append(f"hand half closed from {t[a]:.1f} to {t[b - 1]:.1f} s (openness {typical:.2f}, a clear grasp is under {cfg.clear_below}): not counted as a grasp")
 
     # --- cut to the tracked part, resample at a fixed rate, tool pointing down
     t_out = np.arange(t[first], t[last] + 1e-9, 1 / cfg.out_hz)
@@ -390,17 +425,17 @@ def frames_to_demo(frames: list[ArmFrame], chain: SerialChain, cfg: PoseConfig |
     poses = np.array([make_transform(tool_down(chain, np.arctan2(p[1], p[0])), p) for p in p_out])
     demo = HandDemo(t_out - t_out[0], poses, g_out)
     if not grip.any():
-        warnings.append("no grip found: thumb and index never came close enough. Lower --open-ratio/--close-ratio only if the overlay shows a real grasp.")
+        warnings.append(f"no grasp found from the hand: it never clearly closed (lowest openness {np.nanmin(ratios):.2f}; flat hand = 0.9, fist = 0.45). A wide part keeps the fingers almost straight.")
 
     rows = []
     for i in range(n):
         if not np.isfinite(elbow_b[i, 0]):
             continue
         row = {"t": round(float(t[i]), 4), "elbow_angle_deg": round(float(elbow_deg[i]), 1)}
-        for name, arr in (("elbow", elbow_b), ("wrist", wrist_b), ("pinch", pinch_b)):
+        for name, arr in (("elbow", elbow_b), ("wrist", wrist_b), ("grasp", pinch_b)):
             for a, v in zip("xyz", arr[i]):
                 row[f"{name}_{a}"] = round(float(v), 4) if np.isfinite(v) else ""
-        row["pinch_ratio"] = round(float(ratios[i]), 3) if np.isfinite(ratios[i]) else ""
+        row["hand_openness"] = round(float(ratios[i]), 3) if np.isfinite(ratios[i]) else ""
         row["grip"] = int(grip[i])
         row.update({f"robot_{a}": round(float(v), 4) for a, v in zip("xyz", pos[i])})
         rows.append(row)
@@ -449,14 +484,20 @@ def pick_and_place_points(steps: list[dict]) -> tuple[np.ndarray, np.ndarray] | 
 # ---------------------------------------------------------------- one call for the command line
 
 
-def video_to_demo(video: Path, out_dir: Path, chain: SerialChain, cfg: PoseConfig | None = None, markers=None, camera=None, overlay: bool = True) -> tuple[PoseResult, list[dict]]:
-    """Track a video and write demo.csv, arm_track.csv, steps.json and tracked.mp4 into out_dir."""
+def video_to_demo(video: Path, out_dir: Path, chain: SerialChain, cfg: PoseConfig | None = None, markers=None, camera=None, overlay: bool = True,
+                  tracked: tuple | None = None) -> tuple[PoseResult, list[dict]]:  # fmt: skip
+    """Track a video and write demo.csv, arm_track.csv, steps.json and tracked.mp4 into out_dir.
+    Pass `tracked` (from an earlier result) to redo the steps with another grip without tracking again."""
     from .demo import write_demo
 
     cfg = cfg or PoseConfig()
     out_dir.mkdir(parents=True, exist_ok=True)
-    frames, cam, _ = track_video(video, cfg.arm, markers, camera, out_dir / "tracked.mp4" if overlay else None)
+    if tracked is None:
+        frames, cam, _ = track_video(video, cfg.arm, markers, camera, out_dir / "tracked.mp4" if overlay else None)
+    else:
+        frames, cam = tracked
     res = frames_to_demo(frames, chain, cfg, markers, cam)
+    res.tracked = (frames, cam)
     steps = segment_steps(res.demo)
     write_demo(out_dir / "demo.csv", res.demo)
     with open(out_dir / "arm_track.csv", "w", newline="") as f:

@@ -7,6 +7,8 @@
   replay TRAJ.csv               play a retarget trajectory in the twin and check the task result
   demos N                       make N varied pick-and-place demos, keep the successful ones as episodes
   from-video VIDEO              track your arm in a plain video, replay it in the twin, save a training episode
+  live                          LIVE: your arm leads, the robot follows (twin, or the real arm with --port); shows all the tracking
+  devices                       what this computer uses: graphics card, 3D view, camera
   to-lerobot DIR REPO_ID        turn saved episodes into a LeRobotDataset (needs lerobot installed)
   evaluate POLICY_DIR           run a trained policy (e.g. ACT) in the twin, N random trials, count successes
 """
@@ -49,12 +51,31 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--markers", type=Path, help="markers.json: switch to table-marker mode (true scale)")
     s.add_argument("--camera", type=Path, help="camera.json with fx, fy, cx, cy, dist")
     s.add_argument("--hand-width-mm", type=float, help="your knuckle width, index to little finger (table-marker mode)")
-    s.add_argument("--close-ratio", type=float, default=0.5)
-    s.add_argument("--open-ratio", type=float, default=0.7)
+    s.add_argument("--close-ratio", type=float, default=0.78, help="hand counts as closed below this openness (1 = flat hand, 0.45 = fist)")
+    s.add_argument("--open-ratio", type=float, default=0.84, help="hand counts as open again above this openness")
     s.add_argument("--grips", help="set the grip by hand: seconds from grasp to release, e.g. 3.0-8.5 (times are shown on tracked.mp4), "
                         "or 'object' to find them from the object's motion")
+    s.add_argument("--object", dest="obj", help="what you move, in plain words, e.g. \"juice carton\": an object detector then finds it, "
+                        "follows it and reads grasp and release from it (needs requirements-vision.txt)")
     s.add_argument("--start", type=float, help="use the video from this second")
     s.add_argument("--end", type=float, help="use the video up to this second")
+
+    sub.add_parser("devices")
+    s = sub.add_parser("live")
+    s.add_argument("--camera", type=int, default=0, help="webcam number (0 = the built-in one)")
+    s.add_argument("--video", type=Path, help="use a recorded video instead of the webcam")
+    s.add_argument("--arm", default="right", choices=["right", "left"], help="which of your arms leads")
+    s.add_argument("--objects", nargs="?", const="", help="also find objects: no value = common things, or a name like \"juice carton\"")
+    s.add_argument("--device", choices=["cuda", "cpu"], help="where the object detector runs (default: the graphics card if torch can use it)")
+    s.add_argument("--port", help="serial port of the real SO-101, e.g. COM5. Without it only the twin moves")
+    s.add_argument("--robot-id", default="follower", help="the id used when the arm was calibrated in LeRobot")
+    s.add_argument("--max-speed", type=float, help="fastest joint speed in deg/s (default 90 in the twin, 45 on the real arm)")
+    s.add_argument("--mirror", action=argparse.BooleanOptionalAction, help="show the picture like a mirror (default: yes for a webcam)")
+    s.add_argument("--no-window", action="store_true", help="no window (for tests)")
+    s.add_argument("--no-twin", action="store_true", help="do not run the twin")
+    s.add_argument("--save", type=Path, help="record the window to this mp4")
+    s.add_argument("--log", type=Path, help="write every picture's numbers to this csv")
+    s.add_argument("--seconds", type=float, help="stop after this many seconds")
 
     s = sub.add_parser("to-lerobot")
     s.add_argument("dir", type=Path, help="folder with episode_*.npz from `demos` or `from-video`")
@@ -114,7 +135,19 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "from-video":
         from .from_video import from_video
 
-        return from_video(a.video, a.out, a.arm, a.use, a.markers, a.camera, a.hand_width_mm, a.close_ratio, a.open_ratio, a.grips, a.start, a.end)
+        return from_video(a.video, a.out, a.arm, a.use, a.markers, a.camera, a.hand_width_mm, a.close_ratio, a.open_ratio, a.grips, a.start, a.end, a.obj)
+
+    if a.cmd == "devices":
+        from .live import devices
+
+        return devices()
+
+    if a.cmd == "live":
+        from .live import print_summary, run_live
+
+        print_summary(run_live(a.video if a.video else a.camera, a.arm, a.objects, a.port, a.robot_id, a.max_speed, a.mirror, not a.no_window,
+                               not a.no_twin, a.save, a.log, a.seconds, a.device))
+        return 0
 
     if a.cmd == "to-lerobot":
         from .episodes import npz_to_lerobot

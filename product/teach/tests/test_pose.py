@@ -14,12 +14,24 @@ def chain():
     return SerialChain.from_urdf()
 
 
-def test_elbow_angle_and_grip_ratio():
+def test_elbow_angle_and_hand_openness():
     assert pose.elbow_angle_deg(np.array([0, 0, 0.0]), np.array([0.3, 0, 0]), np.array([0.3, 0.3, 0])) == pytest.approx(90)
     f = synthetic_operator_frames()
-    assert pose.grip_ratio(f[0].hand_world) > 0.9  # open at the start
-    states = pose.grip_states(np.array([1.0, 0.6, 0.45, 0.6, 0.75, 0.6]), 0.5, 0.7)
-    assert states.tolist() == [0, 0, 1, 1, 0, 0]  # 0.6 keeps whatever state it was in
+    assert pose.hand_openness(f[0].hand_world) > 0.9  # flat open hand at the start
+    assert pose.hand_openness(f[120].hand_world) < 0.7  # fingers curled around the part while carrying
+    states = pose.grip_states(np.array([0.9, 0.8, 0.7, 0.8, 0.9, 0.8]), 0.78, 0.84)
+    assert states.tolist() == [0, 0, 1, 1, 0, 0]  # 0.8 keeps whatever state it was in
+    blip = pose.grip_states(np.array([0.9, 0.7, 0.9, 0.7, 0.7, 0.7, 0.9]), 0.78, 0.84, min_hold=2)
+    assert blip.tolist() == [0, 0, 0, 1, 1, 1, 0]  # a one-sample closing is dropped
+
+
+def test_whole_hand_grasp_with_thumb_far_from_index_is_a_grip(chain):
+    """A whole-hand grasp: fingers curled, thumb and index tips 6 cm apart. The old pinch rule missed it."""
+    frames = synthetic_operator_frames()
+    held = frames[120].hand_world
+    assert np.linalg.norm(held[4] - held[8]) > 0.05
+    steps = pose.segment_steps(pose.frames_to_demo(frames, chain).demo)
+    assert [s["step"] for s in steps] == ["reach", "grasp", "move", "release", "retreat"]
 
 
 def test_body_axes_follow_the_operator_not_the_camera():
@@ -74,7 +86,7 @@ def test_table_marker_mode_recovers_true_positions(chain):
     for i, f in enumerate(frames):
         # Put the made-up hand at a known place in the robot frame: a slow line across the table.
         target = np.array([0.22 + 0.0002 * i, -0.10 + 0.0007 * i, 0.03])
-        pinch = (f.hand_world[4] + f.hand_world[8]) / 2
+        pinch = pose.grasp_point(f.hand_world)
         hand_cam = (f.hand_world - pinch) + (cam_to_base @ np.append(target, 1))[:3]
         rvec = np.zeros(3)
         px, _ = cv2.projectPoints(hand_cam, rvec, np.zeros(3), cam.matrix, cam.dist)
@@ -119,3 +131,18 @@ def test_hand_seen_only_without_the_arm_is_a_clear_error(chain):
         f.hand_world = None
     with pytest.raises(RuntimeError, match="No hand found"):
         pose.frames_to_demo(frames, chain)
+
+
+def test_half_closed_hand_is_not_a_grasp(chain):
+    """Fingers around a wide part hover near the threshold. That must not give a grasp in mid-air."""
+    frames = synthetic_operator_frames()
+    open_hand = frames[0].hand_world
+    for f in frames:
+        closed = pose.hand_openness(f.hand_world) < 0.7
+        if closed:  # bend the fingers only part of the way
+            f.hand_world = 0.7 * f.hand_world + 0.3 * open_hand
+    assert 0.70 < min(pose.hand_openness(f.hand_world) for f in frames) < 0.78
+    res = pose.frames_to_demo(frames, chain)
+    assert not res.demo.grip.any()
+    assert any("half closed" in w for w in res.warnings) and any("no grasp found" in w for w in res.warnings)
+    assert pose.pick_and_place_points(pose.segment_steps(res.demo)) is None

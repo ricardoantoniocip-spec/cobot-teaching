@@ -21,6 +21,18 @@ def _ok_name(v) -> bool:
     return isinstance(v, str) and bool(NAME_RE.match(v)) and v not in RESERVED
 
 
+def _same_place(seen: dict | None, pick_no: int) -> bool:
+    """Does pick number `pick_no` start where the place before it ended, going by the object's boxes?"""
+    try:
+        a, b = seen["moves"][pick_no - 2]["place_box_px"], seen["moves"][pick_no - 1]["pick_box_px"]
+    except (TypeError, KeyError, IndexError):
+        return False
+    w, h = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
+    if w <= 0 or h <= 0:
+        return False
+    return w * h / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - w * h) > 0.5
+
+
 def _mm(xyz) -> list[float]:
     return [round(float(v) * 1000.0, 1) for v in xyz]
 
@@ -45,16 +57,41 @@ def steps_to_task(
 
     objects_l = [o for o in labels.get("objects", []) if isinstance(o, dict)]
     obj_name = objects_l[0].get("name") if objects_l else None
+    obj_desc = clean_text(objects_l[0].get("description", "")) if objects_l else ""
+    seen = steps_doc.get("object") if isinstance(steps_doc.get("object"), dict) else None
+    if seen:
+        # The video app followed the object with a detector. Its name is used when no label gives one.
+        seen_name = re.sub(r"[^a-z0-9]+", "_", clean_text(str(seen.get("name", ""))).lower()).strip("_")[:40]
+        if not obj_name and _ok_name(seen_name):
+            obj_name = seen_name
+            who = "you" if seen.get("named_by") == "you" else "the object detector"
+            obj_desc = obj_desc or f"named by {who}; detector score {seen.get('score', '?')}"
+            if seen.get("named_by") != "you":
+                review.append(f"the object name '{seen_name}' is the detector's guess; check it")
+        for k, mv in enumerate(seen.get("moves", []), start=1):
+            if mv.get("hand_on_object") is False:
+                review.append(f"pick {k}: the object moved but the tracked hand was not on it; check the video at {mv.get('t_grasp')} s")
+        for note in seen.get("notes", []):
+            review.append("object detector: " + clean_text(str(note), 300))
     if not _ok_name(obj_name):
         if obj_name:
             review.append(f"object name {clean_text(str(obj_name))!r} from the LLM is not a valid name; used 'part'")
         obj_name = "part"
-    obj_desc = clean_text(objects_l[0].get("description", "")) if objects_l else ""
     if len(objects_l) > 1:
         review.append("the LLM saw more than one object; this version handles one object per task")
 
+    # With a table marker the video app measured where the object stood, in true mm. Those win over the hand.
+    on_table = [mv for mv in (seen or {}).get("moves", []) if mv.get("pick_xyz_mm") and mv.get("place_xyz_mm")]
+    use_table = bool(on_table) and len(on_table) == len((seen or {}).get("moves", []))
+    size_from_picture = False
+    if use_table and not size_measured and on_table[0].get("size_mm"):
+        object_size_mm = tuple(float(v) for v in on_table[0]["size_mm"])
+        size_from_picture = True
+
     gh = grasp_height_mm if grasp_height_mm is not None else min(object_size_mm[2] / 2, 30.0)
-    if not size_measured:
+    if size_from_picture:
+        review.append(f"object size {object_size_mm[0]:g} x {object_size_mm[1]:g} x {object_size_mm[2]:g} mm is a rough estimate from the picture (depth taken equal to width); measure it")
+    elif not size_measured:
         review.append(f"object size {object_size_mm[0]:g} x {object_size_mm[1]:g} x {object_size_mm[2]:g} mm and grasp height {gh:g} mm are assumed, not measured")
 
     locations: dict[str, dict] = {}
@@ -70,6 +107,7 @@ def steps_to_task(
 
     seg_start = 0.0
     picks = places = 0
+    last_place: str | None = None
     for i, s in enumerate(steps):
         kind = s.get("step")
         if kind in ("reach", "move"):
@@ -77,8 +115,19 @@ def steps_to_task(
         elif kind in ("grasp", "release"):
             xyz = _mm(s["to_xyz"])
             surface = 0.0 if flat_table else round(xyz[2] - gh, 1)
+            k = picks if kind == "grasp" else places  # this is move number k + 1
+            if use_table and k < len(on_table):
+                x, y, surface = on_table[k]["pick_xyz_mm" if kind == "grasp" else "place_xyz_mm"]
+                xyz = [x, y, surface + gh]
             if kind == "grasp":
                 picks += 1
+                if last_place and _same_place(seen, picks):
+                    # The object track shows this pick starts where the last place ended. Use that
+                    # one location, not a second one a few millimetres off from hand tracking.
+                    task_steps.append({"do": "pick", "object": obj_name, "at": last_place,
+                                       "label": clean_text(by_index.get(i, {}).get("label", "")) or "pick (unlabelled)",
+                                       "demo": {"t_start": round(seg_start, 3), "t_end": round(float(s["t_end"]), 3)}})
+                    continue
                 name = loc_name(i, f"pick_{picks}")
             else:
                 places += 1
@@ -88,6 +137,8 @@ def steps_to_task(
             label = clean_text(by_index.get(i, {}).get("label", "")) or f"{'pick' if kind == 'grasp' else 'place'} (unlabelled)"
             task_steps.append({"do": "pick" if kind == "grasp" else "place", "object": obj_name, "at": name,
                                "label": label, "demo": {"t_start": round(seg_start, 3), "t_end": round(float(s["t_end"]), 3)}})
+            if kind == "release":
+                last_place = name
     task_steps.append({"do": "home", "label": "back to home"})
     for k, st in enumerate(task_steps):
         st["id"] = k + 1
@@ -95,7 +146,10 @@ def steps_to_task(
     if flat_table:
         review.append("heights flattened to one table (--flat-table): the demo's measured heights were not used")
     review.append("yaw of every location is 0: the video app does not measure object orientation yet")
-    if steps_doc.get("mode") == "body":
+    if use_table:
+        review.append("pick and place positions are the object's place on the table, from its box in the picture and the table marker "
+                      "(one camera: expect a centimetre or two; not yet checked on a real cell)")
+    elif steps_doc.get("mode") == "body":
         review.append("positions come from body mode (arm scaled to the SO-101, not true millimetres)")
 
     name = labels.get("task_name")

@@ -21,6 +21,8 @@ The arm model is the official one (TheRobotStudio/SO-ARM100, same commit as
 | `python -m so101_sim replay traj.csv --video replay.mp4` | Plays a retarget trajectory in the twin, prints tracking, tool error and SUCCESS/FAIL |
 | `python -m so101_sim demos 50 --out sim_data` | 50 random part/place positions, keeps the successful runs as training episodes |
 | `python -m so101_sim from-video my_task.mp4` | Your own video to a twin replay and a training episode (see "From your own video") |
+| `python -m so101_sim live` | LIVE: your arm leads, the robot follows, and you see all the tracking (see "Live") |
+| `python -m so101_sim devices` | Says what this computer uses: graphics card, 3D view, camera |
 | `python -m so101_sim to-lerobot sim_data USER/so101_sim_pick_place --root sim_data/lerobot` | Episodes to a LeRobotDataset (add `--push` to upload it, private, to your Hugging Face account) |
 | `python -m so101_sim evaluate POLICY_DIR --trials 20` | Runs a trained policy in the twin and counts successes |
 
@@ -80,12 +82,69 @@ python -m so101_sim evaluate outputs\act_so101_sim --trials 20 --video-dir outpu
 
 Write the score in learning/progress.md. Pass mark, same as week 2 of the learning plan: 12/20.
 
+## Live: your arm leads, the robot follows (15 Nov 2026)
+
+One window. Left: the webcam with your body, both hands and the objects drawn on it. Right: the
+robot in the twin doing what your arm does, and a panel with the numbers.
+
+```powershell
+python -m so101_sim devices                       # what will run on the graphics card
+python -m so101_sim live                          # body tracking + twin
+python -m so101_sim live --objects                # also find common things on the table
+python -m so101_sim live --objects "juice carton" # or one thing by name
+python -m so101_sim live --port COM5              # also drive the real SO-101 (when it is built)
+python -m so101_sim live --video take.mp4 --no-window --save out.mp4 --log out.csv   # a recorded video
+```
+
+How to start: sit as you will work, **rest your working hand on the table and hold still for
+2 seconds** (yellow bar). That sets your body directions, your arm length and the table height.
+Then move. Open hand = gripper open, closed hand = gripper closed, anything in between too.
+
+Keys: `q` quit, `c` calibrate again, `SPACE` pause or continue the robot, `o` objects on or off,
+`r` put the block back, `s` save a picture.
+
+What the panel tells you:
+
+| Line | Meaning | If it looks wrong |
+|---|---|---|
+| WAITING / CALIBRATING / FOLLOWING / HOLD | what the follower is doing | WAITING: both shoulders and the whole arm must be in view. HOLD: the hand is not seen |
+| arm seen, hand seen, tracking ms | the body tracker on this picture | more light, plain sleeve, hand not edge-on to the camera |
+| hand openness, gripper % | 0.9 flat hand, 0.45 fist | a wide part keeps the number high: that is the known weak spot |
+| tool point x y z | where the robot's gripper is asked to go (mm, robot base) | AT EDGE OF REACH: your hand is outside the robot's scaled working area |
+| IK miss, behind | how far the joints end from that point; how far the speed limit holds them back | "behind" stays large: you move faster than `--max-speed` |
+| objects on cuda / cpu, one look takes | the object detector | on cpu a look takes 5 to 10 s, so the boxes are old (age is printed on each box) |
+
+### Graphics card
+
+- **Object detector**: runs on an NVIDIA card when torch was installed with CUDA. `devices` tells
+  you. If it says CPU:
+  `pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu124`
+- **Twin 3D view**: MuJoCo draws with the graphics card by itself.
+- **Body tracking** (MediaPipe): CPU. Its Python package has no graphics card mode on Windows, and it
+  does not need one (tens of milliseconds per picture).
+
+### The real arm (`--port`), UNTESTED until the servos arrive
+
+It starts PAUSED: the twin follows you, the arm does not. Press `SPACE` to let the arm follow,
+`SPACE` again to stop it. Joints are capped at 45 deg/s (`--max-speed`). On quit it goes back to
+where it started, then switches off (it goes limp: keep a hand near it). First do
+`hardware/so101/first-power-up.md`.
+
+### Limits
+
+- Positions are scaled from your arm, not true millimetres. One camera is weak in depth, so
+  reaching towards or away from the camera is the least accurate direction.
+- The SO-101 has 5 joints. Its gripper points down near the table and tilts forward as your hand
+  goes up; it does not copy your wrist's rotation.
+- Tested on take 1 as a recorded video (arm seen in 100% of pictures, hand in 82%, IK miss under
+  4 mm) and on made-up landmarks. Not yet tested with a live webcam, on Windows, or on a graphics card.
+
 ## From your own video (12 Nov 2026)
 
 Film yourself doing a pick and place, and get a checked training episode. No markers on your body.
 
 ```
-your video -> arm tracking (MediaPipe) -> pinch point + grip -> SO-101 joint angles (IK) -> twin replay -> episode -> LeRobotDataset
+your video -> arm tracking (MediaPipe) -> hand open or closed -> SO-101 joint angles (IK) -> twin replay -> episode -> LeRobotDataset
 ```
 
 One-time setup, in the same venv:
@@ -104,8 +163,8 @@ MediaPipe prints many `INFO:` and `W0000` lines. Ignore them. It prints three st
 
 | File | What to look for |
 |---|---|
-| `tracked.mp4` | Your video with the arm drawn on it. The dot between thumb and index turns red when it sees a grip. |
-| `arm_track.csv` | Your elbow, wrist and pinch point per frame (metres from your shoulder), elbow angle, grip. |
+| `tracked.mp4` | Your video with the arm drawn on it. The dot on your hand turns red when your hand is closed, with the openness number next to it. |
+| `arm_track.csv` | Your elbow, wrist and grasp point per frame (metres from your shoulder), elbow angle, hand openness, grip. |
 | `steps.json` | The demo cut into steps: reach, grasp, move, release, retreat. `label` is empty: a vision model fills it later. |
 | `replay_copy.mp4` | The robot following your hand path sample by sample. |
 | `replay_steps.mp4` | A clean robot motion rebuilt from where you gripped and released. This one becomes the episode. |
@@ -125,22 +184,43 @@ and train ACT on it exactly as in steps 3 and 4 below.
 - Phone or webcam on a tripod or a stack of books. It must not move.
 - Your whole working arm in view the whole time: shoulder, elbow, wrist and hand. Both shoulders visible.
 - Sit facing the camera or at an angle to it. Not with your back to it.
-- Grip with thumb and index finger, like the robot's two-finger gripper. Open your hand wide between grips.
+- Open hand = not holding. Closed hand = holding. Use any grip you like (whole hand is fine), but start with a flat open hand and open it flat again after you let go.
 - One pick and one place per video, 5-15 seconds. Start and end with an open hand.
 - Good light, sleeves that contrast with the table.
 
-### If the grip is not found
+### How the grasp is found
 
-The automatic grip only sees a thumb-and-index pinch. A whole-hand grasp of a wide part (a carton, a
-bottle) looks the same as a relaxed hand. Then set the grip by hand: open `tracked.mp4`, read the time
-printed top left when you take hold and when you let go, and pass them. `--end` cuts off the part
-where you reach for the camera.
+The app measures how open your hand is in every frame: 0.9 is a flat hand, 0.45 is a fist. Under
+0.78 for at least 0.4 s is a closed hand, and it only counts as a grasp when the hand is clearly
+closed (typically under 0.70). The moment it closes is the grasp, the moment it opens is the release.
 
-```powershell
-python -m so101_sim from-video my_task.mp4 --arm right --grips 3.0-8.5 --end 9.5
+### Best: tell the app what you move
+
+```
+pip install -r ../teach/requirements-vision.txt     (once; torch and transformers)
+python -m so101_sim from-video my_task.mp4 --arm right --object "juice carton"
 ```
 
-Whole-hand grip (the pinch dot never turns red)? Let the app find the times from the object:
+An object detector (LLMDet tiny, an open model from Hugging Face, about 700 MB on first use)
+finds the object by name every half second, also while your hand is on it. Where the object
+stands still it rests; between two resting places it is being moved. That gives the grasp, the
+release and the pick and place spots, for every time you move it, and the app checks that your
+tracked hand is on the object at each grasp. Check `object_track.jpg`. The name, the times and
+the boxes go into `steps.json`, and from there into the task file and the robot program
+(`python -m taskprog from-steps`).
+
+About 5 s per picture on a laptop CPU, so about 3.5 minutes for a 17 s video; a GPU is about ten
+times faster. Limits: one object per video, fixed camera, plain words work best ("juice carton",
+"metal bracket"). The twin replays the first pick and place only. Tested on take 1 (both moves
+found, twin SUCCESS) and on made-up videos.
+
+### Without a name
+
+A wide part (a carton, a bottle) keeps your fingers almost straight, so the hand never clearly
+closes. The app then says so and looks at the object instead, with no extra option needed: first
+with the detector (it looks for common things and takes the one that is moved; on take 1 it finds
+the carton and calls it "bottle"), and if torch is not installed, with a plain picture comparison.
+You can also ask for the picture comparison directly:
 
 ```
 python -m so101_sim from-video my_task.mp4 --arm right --grips object
@@ -151,6 +231,13 @@ moments it leaves and arrives as grasp and release. Check `object_motion.jpg` in
 folder. Limits: one object, one move, fixed camera; if the hand hides almost nothing of the
 object, the release can be found too early. Tested on take 1's overlay video and on made-up videos.
 
+If both fail, set the times by hand: open `tracked.mp4`, read the time printed top left when you
+take hold and when you let go, and pass them. `--end` cuts off the part where you reach for the camera.
+
+```powershell
+python -m so101_sim from-video my_task.mp4 --arm right --grips 3.0-8.5 --end 9.5
+```
+
 ### What the numbers mean (body mode, the default)
 
 Your shoulder is placed on the robot's shoulder and your arm is scaled to the robot's reach (about
@@ -160,6 +247,8 @@ smaller, and the twin puts the block where your hand closed. Positions are not t
 For the real arm and real parts you need true positions: tape a printed ArUco marker on the table at a
 measured place and add `--markers markers.json --camera camera.json --hand-width-mm 85`
 (see product/teach/README.md for the two files). This mode is unit tested but not yet tried on a real video.
+Together with `--object "name"` the marker also gives the object's own place on the table in mm
+(pick and place spot, rough size), and the task file uses those instead of the hand's position.
 
 ### Limits of this first version
 
@@ -180,6 +269,10 @@ measured place and add `--markers markers.json --camera camera.json --hand-width
 - Scripted demo -> retarget -> twin: 20 of 20 random positions succeed (part 18-28 cm in front, 5-15 cm to the side).
   An earlier version without a fixed home pose got 17/20: failures at the far edge of the reach, where IK missed by
   2-3 cm or the block tipped over. Useful to know for the real cell.
+- **Correction, 15 Nov 2026:** those 20 "successes" ended with the block lying on its side. The score only checked
+  where the block ended. The gripper dragged the block over when it went up after the release. Fixed: the finger
+  now moves 8 mm off the part first, and a run fails when the part falls over. Re-run with the fix, same 20 positions: 20 of 20 upright in the zone, 10 mm typical from the centre (it was about 22 mm).
+  **Training data made before this date teaches the tipping release: make it again (`demos 50`) and retrain.**
 - Servo tracking in the twin: worst 0.3 degrees behind the command.
 - `to-lerobot`: made a LeRobotDataset v3 with lerobot 0.6.1, loaded it back, and ran 20 ACT training
   steps on CPU (loss falling). `evaluate` ran a trial with that 20-step policy (it fails, as expected).

@@ -24,6 +24,9 @@ HZ = 30.0
 REACH_TOL_M = 0.005
 
 
+BACK_OFF_M = 0.008  # after a release the finger moves this far off the part before going up
+
+
 @lru_cache(maxsize=1)
 def chain() -> SerialChain:
     return SerialChain.from_urdf()
@@ -110,6 +113,18 @@ def trajectory(task: Task, cell: Cell) -> tuple[JointTrajectory, list[tuple[Moti
             for k in range(1, n + 1):
                 push(q, grip + (g_t - grip) * min(1.0, 2 * k / n), 0.0)  # move in the first half, then settle
             grip = g_t
+            if not m.close and m.step and BACK_OFF_M > 0:
+                # After a release the part leans on the fixed finger (inner side). Going straight up drags it
+                # along and tips it over (seen in the twin). First move the finger away from the part, towards the base.
+                start = tool_now[:3, 3].copy()
+                radial = start[:2] / max(np.linalg.norm(start[:2]), 1e-6)
+                for a in _profile(int(np.ceil(0.4 * HZ))):
+                    t = tool_now.copy()
+                    t[:2, 3] = start[:2] - a * BACK_OFF_M * radial
+                    res = solve_ik_with_restarts(ch, t, q, orientation_weight=0.05)
+                    q = res.q
+                    push(q, grip, res.position_error_m)
+                tool_now = t
         elif m.kind in ("wait", "output", "input"):
             # No I/O on the SO-101: a signal step is a short pause (a pulse keeps its length).
             pause = m.seconds if m.kind == "wait" else (m.seconds if m.kind == "output" and m.seconds else 0.5)

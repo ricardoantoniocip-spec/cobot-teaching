@@ -55,6 +55,65 @@ Limits: example positions, not a measured cell. No check that a part is really i
 or the feeder. The press example has no door or light-curtain signal; safety design stays with
 the integrator. On a timeout the program stops where it is and leaves outputs as they are.
 
+## Take 1 again with the object detector, 14 Nov 2026
+
+`so101_sim from-video take1.mp4 --object "juice carton"`, then `from-steps`, `check`, `ursim`.
+Files in [examples/take1_object_detector](examples/take1_object_detector).
+
+| | Before | Now |
+|---|---|---|
+| Object | not identified | "juice carton", found in 37 of 37 pictures looked at, score 0.78 |
+| Moves found | 1 (the second was reported as "moved again", not used) | 2: grasp 4.53 s, release 7.71 s; grasp 11.56 s, release 14.34 s |
+| Hand on the object at each grasp | not checked | checked, yes for both |
+| Task file | one pick, one place, object "part" | two picks and places of `juice_carton`; the second pick reuses the first place location |
+| URSim 5.26, UR5e | PASS | PASS, 6 steps, every step within 0.1 mm of the plan |
+| SO-101 twin | SUCCESS, first move | first move SUCCESS (12 mm). Both moves: FAIL at the second pick, see below |
+
+Second move in the twin: after the first place the block stands about 12 mm from where the
+program thinks it is, and the gripper misses a 20 mm block on the re-pick. A real cell has the
+same problem; the fix is to look where the part really is before each pick, which is not built.
+
+Cost: about 3.5 minutes of detector time for the 17 s video on a 4-core CPU.
+
+## Look before each pick, and a fault found on the way (15 Nov 2026)
+
+```
+python -m taskprog twin examples/take1_object_detector/task.json --cell cells/so101_twin.json --look
+```
+
+`--look`: before every pick after the first, the pick position is taken from where the block
+really stands, not from where the program put it down. In the twin the look is perfect (the
+simulator knows where the block is), so this proves the logic, not a camera.
+
+While building it, the real cause of the failed second pick showed up: **the block fell over at
+every release**. After opening, the block leaned on the fixed finger, and the finger dragged it
+up and tipped it. The twin's score only looked at where the block ended, not whether it stood, so
+"SUCCESS" hid it. Two fixes:
+
+- After a release the finger first moves 8 mm off the part, then goes up (SO-101 trajectory and the scripted demo).
+- The twin now fails a run when the part ends on its side ("the part fell over").
+
+| Take 1, both moves, in the twin | Result |
+|---|---|
+| Before (14 Nov) | FAIL, block on its side after the first place |
+| With the finger back-off, no look | FAIL: after the first place the block stands 19 mm from where the program expects it, and the blind second pick knocks it over |
+| With the finger back-off and `--look` | SUCCESS, block upright, 18 mm from the zone centre |
+
+Eight random two-move tasks: 7 of 8 succeed with `--look`, 0 of 8 without.
+
+Open: the block ends about 18 mm from where it was told to go, every time and in the same
+direction. That is a fixed offset in the grasp geometry and should be measured and removed.
+Not built: a look in URScript (needs a camera on the cell and the table marker).
+
+## True positions from a table marker (15 Nov 2026)
+
+With `from-video ... --object NAME --markers markers.json --camera camera.json`, each move in
+`steps.json` also gets `pick_xyz_mm`, `place_xyz_mm` (object centre on the table, robot base
+frame) and a rough `size_mm`. `from-steps` then uses those for the locations and the object
+size, and says so in the review notes. They come from the object's box and the marker
+(`retarget/table.py`). Geometry test with made-up cameras: typical error 7 mm, worst 31 mm for a
+tall carton seen from high up. **No real video with a marker has been run yet.**
+
 ## URSim on your laptop (optional, about 20 minutes)
 
 Needs Docker Desktop (Windows, WSL 2).
@@ -76,7 +135,7 @@ docker stop ursim
 
 ## Tests
 
-`python -m pytest -q tests` (60 tests, about 40 s; the twin test needs mujoco and skips without it).
+`python -m pytest -q tests` (93 tests, about 50 s; the twin test needs mujoco and skips without it).
 
 ## Demo video
 
