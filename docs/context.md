@@ -59,6 +59,7 @@ Shared facts for every agent and skill. Last updated 2026-11-15.
 - New in Oct 2026: Machenta (London, $40M seed, one-shot task learning trained in sim) and Bleu Robotics (France, EUR 5M pre-seed, few-example learning for humanoids). See research/briefs/2026-11-02-market-brief.md.
 - New in Nov 2026: Tutor Intelligence (US, $75M Series B) sells robot work by the hour or pick, trained from human demos, own robots in US warehouses. See research/briefs/2026-11-09-market-brief.md.
 - Portugal: INESC TEC + Europneumaq MOBOT 2.0 (AR-glasses task teaching for a mobile manipulator, ~EUR 1.5M, 3 yrs). Possible partner or rival. See research/briefs/2026-11-16-market-brief.md.
+- New Nov 2026: Genesis AI (Paris/CA, $500M Series A, gloves + cameras + touch capture of workers' hands, own robots rented) is the closest big rival to the sleeve. Humyn Labs ($47M) sells human-demo data capture. See research/briefs/2026-11-23-market-brief.md.
 - No one found that sells a fixed price per task in PT or NL.
 
 ## Funding
