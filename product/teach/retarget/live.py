@@ -76,7 +76,7 @@ class LiveConfig:
     wrist_beta: float = 0.6  # per rad/s
     wrist_deadband_deg: float = 6.0  # wrist changes smaller than this are ignored (tracker noise is about this big)
     reach: str = "elbow"  # "elbow": forward from how straight your arm is (camera in front); "depth": the tracker's depth guess
-    calib_still_m: float = 0.04  # calibration restarts if your hand moves more than this (your size, not the robot's)
+    calib_still_m: float = 0.05  # calibration restarts (at most twice) if your hand moves more than this across the picture
     max_joint_speed_deg_s: float = 90.0  # no joint moves faster than this
     hand_closed_at: float = 0.62  # hand openness that fully closes the gripper (fist is about 0.45)
     hand_open_at: float = 0.84  # hand openness that fully opens it (flat hand is about 0.9)
@@ -159,6 +159,7 @@ class LiveFollower:
         self._f_wrist = OneEuro(self.cfg.wrist_min_cutoff_hz, self.cfg.wrist_beta)
         self.scale = self.z_table = 0.0
         self.b_rest = None
+        self._calib_tries = 0
 
     # ------------------------------------------------------------ calibration
 
@@ -223,13 +224,13 @@ class LiveFollower:
         if self.mode in (WAITING, CALIBRATING):
             shoulder_ok = seen and (f.pose_vis is None or f.pose_vis[POSE[cfg.arm]["shoulder"]] >= SHOULDER_MIN_VIS)
             if seen and not shoulder_ok:
-                if self._calib and f.t - self._calib[-1].t > 0.5:
+                if self._calib and f.t - self._calib[-1].t > 1.0:
                     self._calib = []
                 st.mode = self.mode = WAITING if not self._calib else CALIBRATING
                 st.message = f"Shoulder not seen: sit further back so your {cfg.arm} shoulder is in the picture"
                 return st
             if not seen:
-                if self.mode == CALIBRATING and self._calib and f.t - self._calib[-1].t > 0.5:
+                if self.mode == CALIBRATING and self._calib and f.t - self._calib[-1].t > 1.0:
                     self._calib = []  # lost during calibration: start it again
                 st.mode = self.mode = WAITING if not self._calib else CALIBRATING
                 st.message = "Show both shoulders, your working arm and your hand"
@@ -239,11 +240,15 @@ class LiveFollower:
             st.calib_progress = min(1.0, (f.t - self._calib[0].t) / cfg.calib_s)
             st.message = "Rest your hand on the table and hold still"
             if st.calib_progress >= 1.0 and len(self._calib) >= 5:
-                g = np.array([self._grasp_body_raw(c) for c in self._calib])
-                if np.ptp(g, axis=0).max() > cfg.calib_still_m:  # you moved: the zero would be wrong
+                # Did you move? Only across the picture (x, y): the tracker's depth is too noisy to judge,
+                # and 10-90 % range so one bad picture does not count. After 3 tries it calibrates anyway.
+                g = np.array([self._grasp_body_raw(c) for c in self._calib])[:, :2]
+                spread = float((np.percentile(g, 90, axis=0) - np.percentile(g, 10, axis=0)).max())
+                if spread > cfg.calib_still_m and self._calib_tries < 2:
+                    self._calib_tries += 1
                     self._calib = [f]
                     st.calib_progress = 0.0
-                    st.message = "You moved: rest your hand on the table and hold still"
+                    st.message = f"You moved ({spread * 100:.0f} cm): rest your hand on the table and hold still"
                     return st
                 self._finish_calibration()
                 st.message = "Following"

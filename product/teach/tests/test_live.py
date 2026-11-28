@@ -230,6 +230,21 @@ def test_calm_when_still_and_restarts_calibration_if_you_move():
     moving = operator_frames()[0][n_still:]  # no still part: the hand never rests
     _, states = run(moving)
     assert all(s.mode != FOLLOWING for s in states[: int(2.5 * HZ)])
+    assert any("You moved" in s.message for s in states)
+    assert states[-1].mode == FOLLOWING  # after 3 tries it calibrates anyway: never stuck
+
+
+def test_calibration_ends_despite_tracker_noise():
+    rng = np.random.default_rng(2)
+    frames, n_still = operator_frames()
+    for f in frames[:n_still]:  # resting hand, 1 cm jitter across the picture and 5 cm in depth, plus a few wild pictures
+        f.pose_world = f.pose_world.copy()
+        f.pose_world[16] += rng.normal(0, [0.01, 0.01, 0.05])
+        if rng.random() < 0.05:
+            f.pose_world[16] += rng.normal(0, 0.1, 3)
+    _, states = run(frames)
+    first = next(i for i, s in enumerate(states) if s.mode == FOLLOWING)
+    assert first / HZ < 2.2
 
 
 def test_stretching_the_arm_moves_the_robot_forward_even_with_bad_depth():
