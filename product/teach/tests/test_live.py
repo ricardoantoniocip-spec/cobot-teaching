@@ -3,18 +3,25 @@
 import copy
 
 import numpy as np
-
 from retarget.examples import synthetic_operator_frames
-from retarget.kinematics import SerialChain
-from retarget.live import CALIBRATING, FOLLOWING, HOLD, WAITING, LiveConfig, LiveFollower
+from retarget.kinematics import SerialChain, axis_angle_to_matrix
+from retarget.live import (
+    CALIBRATING,
+    FOLLOWING,
+    HOLD,
+    WAITING,
+    LiveConfig,
+    LiveFollower,
+)
+from retarget.pose import H_WRIST, body_axes, wrist_angles
 
 HZ = 30.0
 
 
 def operator_frames():
-    """2.5 s with the hand resting at the pick spot (calibration), then the pick and place."""
+    """3.5 s with the hand resting at the pick spot (calibration), then the pick and place."""
     demo = synthetic_operator_frames(hz=HZ)
-    still = [copy.deepcopy(demo[2 * int(HZ)]) for _ in range(int(2.5 * HZ))]  # frame where the hand is down at the pick
+    still = [copy.deepcopy(demo[2 * int(HZ)]) for _ in range(int(3.5 * HZ))]  # frame where the hand is down at the pick
     frames = still + demo
     for i, f in enumerate(frames):
         f.t = i / HZ
@@ -22,6 +29,7 @@ def operator_frames():
 
 
 def run(frames, **cfg):
+    cfg.setdefault("clutch", False)  # most tests check the absolute mapping; clutch tests below switch it on
     fol = LiveFollower(SerialChain.from_urdf(), LiveConfig(**cfg))
     return fol, [copy.deepcopy(fol.update(f)) for f in frames]
 
@@ -37,9 +45,9 @@ def test_calibrates_then_follows_the_hand():
     assert len(following) > 200
     # the hand rested on the table during calibration, so the lowest target is the table height
     assert abs(min(s.target[2] for s in following) - fol.cfg.table_z_m) < 0.003
-    # the pick is to the operator's left, the place to the right: the robot's y changes sign
+    # the pick is to the operator's left, the place to the right: the robot moves sideways the same way
     ys = [s.target[1] for s in following]
-    assert max(ys) > 0.03 and min(ys) < -0.03
+    assert max(ys) - min(ys) > 0.08 and abs(following[0].target[1] - fol.cfg.rest_xy_m[1]) < 0.01
     # once it has caught up, IK reaches the target and the speed limit is not holding it back
     late = following[60:]
     assert np.median([s.ik_error_mm for s in late]) < 5
@@ -86,3 +94,273 @@ def test_waits_until_a_person_is_seen():
     _, states = run(frames)
     assert states[0].mode == WAITING and "shoulders" in states[0].message
     assert states[-1].mode == FOLLOWING
+
+
+# ---------------------------------------------------------------- shoulder and wrist (2026-11-28, first real-arm test)
+
+
+def rotate_hand(f, axis_body, angle, axes):
+    """Turn the hand about its wrist by angle (rad) about an axis given in the operator's axes; the arm stays."""
+    r = axes @ axis_angle_to_matrix(np.asarray(axis_body, float), angle) @ axes.T
+    h = f.hand_world
+    f.hand_world = (h - h[H_WRIST]) @ r.T + h[H_WRIST]
+
+
+def test_wrist_angles_measure_tilt_and_roll():
+    f = synthetic_operator_frames()[0]
+    axes = body_axes([f])
+    ref = f.hand_world.copy()
+    fwd = (ref[9] - ref[0]) @ axes
+    fwd /= np.linalg.norm(fwd)
+    side = np.cross([0, 0, 1.0], fwd)
+    side /= np.linalg.norm(side)
+    g = copy.deepcopy(f)
+    rotate_hand(g, side, np.radians(20), axes)  # about the left axis: fingers 20 deg further down
+    pitch, roll = wrist_angles(g.hand_world, ref, axes)
+    assert abs(np.degrees(pitch) - 20) < 1 and abs(np.degrees(roll)) < 1
+    g = copy.deepcopy(f)
+    rotate_hand(g, fwd, np.radians(40), axes)  # palm turned 40 deg about the hand's own forward axis
+    pitch, roll = wrist_angles(g.hand_world, ref, axes)
+    assert abs(np.degrees(roll) - 40) < 1 and abs(np.degrees(pitch)) < 1
+
+
+def wrist_run(turn, **cfg):
+    """Calibrate, then hold the hand still above the pick (2 s, the robot catches up) and turn the wrist after that."""
+    frames, n_still = operator_frames()
+    hold = copy.deepcopy(frames[n_still + 15])  # hand on the way to the pick, open, above the table
+    axes = body_axes(frames[:n_still])
+    out = frames[:n_still]
+    for i in range(int(4 * HZ)):
+        g = copy.deepcopy(hold)
+        g.t = (n_still + i) / HZ
+        if i >= 2 * HZ:
+            turn(g, axes)
+        out.append(g)
+    fol, states = run(out, **cfg)
+    return states[n_still + int(2 * HZ) - 1], states[-1], fol
+
+
+def test_hand_roll_drives_wrist_roll():
+    def turn(g, axes):
+        h = g.hand_world
+        fwd = (h[9] - h[0]) / np.linalg.norm(h[9] - h[0])
+        rotate_hand(g, axes.T @ fwd, np.radians(45), axes)
+
+    before, after, fol = wrist_run(turn)
+    assert abs(after.wrist_roll_deg - 45) < 2
+    d = np.degrees(after.q - before.q)
+    assert abs(abs(d[4]) - (45 - fol.cfg.wrist_deadband_deg)) < 3  # wrist_roll turns as much as the palm, less the dead band
+    assert abs(d[3]) < 1  # wrist_flex stays (the arm joints follow the grasp point, which moves a little as the hand turns)
+    assert after.ik_error_mm < 5
+    # same sense of turning: the gripper turns about its fingers the way the palm turned about the hand's forward axis
+    r_rel = fol.chain.fk(before.q)[:3, :3].T @ fol.chain.fk(after.q)[:3, :3]
+    assert np.degrees(np.arctan2(r_rel[1, 0], r_rel[0, 0])) > 30
+    # switched off: no roll
+    before, after, _ = wrist_run(turn, wrist=False)
+    assert abs(np.degrees(after.q[4] - before.q[4])) < 2
+
+
+def test_hand_tilt_drives_gripper_tilt():
+    def turn(g, axes):
+        h = g.hand_world
+        fwd = axes.T @ (h[9] - h[0])
+        side = np.cross([0, 0, 1.0], fwd / np.linalg.norm(fwd))
+        rotate_hand(g, -side / np.linalg.norm(side), np.radians(30), axes)  # fingers 30 deg UP
+
+    before, after, fol = wrist_run(turn)
+    assert abs(after.wrist_flex_deg + 30) < 2
+
+    def finger_down_deg(q):
+        z = fol.chain.fk(q)[:3, 2]  # along the fingers
+        return np.degrees(np.arcsin(-z[2]))
+
+    assert finger_down_deg(before.q) - finger_down_deg(after.q) > 18  # the gripper tipped up with the hand
+    tipped = finger_down_deg(before.q) - finger_down_deg(after.q)
+    # the gripper tilts with the hand (30 deg less the 6 deg dead band, plus a little more from the height schedule,
+    # because turning the hand about the wrist lifts the grasp point)
+    assert 20 < tipped < 45
+    assert after.ik_error_mm < 5 and not after.wrist_at_limit  # and the tool point stays where the hand is
+
+
+def test_ik_never_jams_against_the_wrist():
+    """28 Nov real test: the hand tilted 40-70 deg and IK, asked for that tilt, jammed wrist_flex at 95 deg with 5 cm misses."""
+    def turn(g, axes):
+        h = g.hand_world
+        fwd = axes.T @ (h[9] - h[0])
+        side = np.cross([0, 0, 1.0], fwd / np.linalg.norm(fwd))
+        rotate_hand(g, side / np.linalg.norm(side), np.radians(70), axes)  # fingers 70 deg further down
+
+    _, after, _ = wrist_run(turn)
+    assert after.ik_error_mm < 5
+
+
+def test_follows_with_an_unsure_shoulder_after_calibration():
+    frames, n_still = operator_frames()
+    for f in frames[n_still:]:
+        f.pose_vis = f.pose_vis.copy()
+        f.pose_vis[12] = 0.05  # right shoulder hidden or out of the picture
+    _, states = run(frames)
+    assert states[-1].mode == FOLLOWING and states[-1].target is not None
+
+
+def test_calibration_asks_for_the_shoulder():
+    frames, _ = operator_frames()
+    for f in frames[:20]:
+        f.pose_vis = f.pose_vis.copy()
+        f.pose_vis[12] = 0.05
+    _, states = run(frames)
+    assert states[0].mode == WAITING and "shoulder" in states[0].message
+    assert states[-1].mode == FOLLOWING
+
+
+def test_calm_when_still_and_restarts_calibration_if_you_move():
+    rng = np.random.default_rng(1)
+    frames, n_still = operator_frames()
+    hold = frames[n_still + 15]
+    noisy = frames[:n_still]
+    for i in range(int(3 * HZ)):  # holding still, tracker noise 5 mm on the wrist and 3 deg on the hand
+        g = copy.deepcopy(hold)
+        g.t = (n_still + i) / HZ
+        g.pose_world = g.pose_world.copy()
+        g.pose_world[16] += rng.normal(0, 0.005, 3)
+        axes = body_axes(frames[:n_still])
+        rotate_hand(g, rng.normal(0, 1, 3) / np.sqrt(3), np.radians(rng.normal(0, 3)), axes)
+        noisy.append(g)
+    _, states = run(noisy)
+    late = np.array([s.q for s in states[-int(HZ):]])
+    assert np.degrees(np.ptp(late, axis=0)).max() < 4  # the robot barely shakes
+
+    moving = operator_frames()[0][n_still:]  # no still part: the hand never rests
+    _, states = run(moving)
+    assert all(s.mode != FOLLOWING for s in states[: int(2.5 * HZ)])
+    assert any("You moved" in s.message for s in states)
+    assert states[-1].mode == FOLLOWING  # after 3 tries it calibrates anyway: never stuck
+
+
+def test_calibration_ends_despite_tracker_noise():
+    rng = np.random.default_rng(2)
+    frames, n_still = operator_frames()
+    for f in frames[:n_still]:  # resting hand, 1 cm jitter across the picture and 5 cm in depth, plus a few wild pictures
+        f.pose_world = f.pose_world.copy()
+        f.pose_world[16] += rng.normal(0, [0.01, 0.01, 0.05])
+        if rng.random() < 0.05:
+            f.pose_world[16] += rng.normal(0, 0.1, 3)
+    _, states = run(frames)
+    first = next(i for i, s in enumerate(states) if s.mode == FOLLOWING)
+    assert first / HZ < 2.2
+
+
+def test_stretching_the_arm_moves_the_robot_forward_even_with_bad_depth():
+    """28 Nov real test: camera in front, the tracker's depth was poor and stretching the arm moved the robot down and back.
+    Here, after calibration, the wrist's depth is squashed to a third but the elbow angle is right (MediaPipe's
+    3D body keeps bone lengths and joint angles plausible even when its distance from the camera is off)."""
+    frames, n_still = operator_frames()
+
+    def squash(fs):
+        out = []
+        for f in fs:
+            g = copy.deepcopy(f)
+            g.pose_world = g.pose_world.copy()
+            sh = g.pose_world[12]
+            d = g.pose_world[16] - sh
+            elbow_ang = np.degrees(np.arccos(np.clip(np.dot(sh - g.pose_world[14], g.pose_world[16] - g.pose_world[14])
+                                                     / np.linalg.norm(sh - g.pose_world[14]) / np.linalg.norm(g.pose_world[16] - g.pose_world[14]), -1, 1)))
+            g.pose_world[16] = sh + d * np.array([1.0, 1.0, 1 / 3])  # camera z = depth, squashed
+            g.elbow_true = elbow_ang
+            out.append(g)
+        return out
+
+    import retarget.live as L
+    true_angle = L.elbow_angle_deg
+    try:  # the tracker's elbow angle stays right even when its depth is off
+        cur = {}
+        L.elbow_angle_deg = lambda a, b, c: cur["ang"]
+        fol = LiveFollower(SerialChain.from_urdf(), LiveConfig())
+        xs, states = [], []
+        for f in frames[:n_still] + squash(frames[n_still:]):
+            cur["ang"] = getattr(f, "elbow_true", None) or true_angle(f.pose_world[12], f.pose_world[14], f.pose_world[16])
+            states.append(fol.update(f))
+        good = LiveFollower(SerialChain.from_urdf(), LiveConfig())
+        ref = []
+        for f in frames:
+            cur["ang"] = true_angle(f.pose_world[12], f.pose_world[14], f.pose_world[16])
+            ref.append(good.update(f))
+    finally:
+        L.elbow_angle_deg = true_angle
+    a = np.array([s.target for s in states if s.target is not None])
+    b = np.array([s.target for s in ref if s.target is not None])
+    assert np.median(np.linalg.norm(a - b, axis=1)) < 0.01  # squashed depth gives the same robot path
+
+
+
+# ---------------------------------------------------------------- exact IK and clutch (step 2, 28 Nov)
+
+from retarget.kinematics import SO101IK  # noqa: E402
+
+
+def test_exact_ik_round_trip():
+    c = SerialChain.from_urdf()
+    ik = SO101IK(c)
+    rng = np.random.default_rng(0)
+    for _ in range(300):
+        q = rng.uniform(c.lower * 0.8, c.upper * 0.8)
+        q[4] = 0.0
+        p = c.fk(q)[:3, 3]
+        r = ik.solve(p, ik.pitch_of(q), 0.0, q_prev=q, refine=0)
+        assert np.linalg.norm(c.fk(r.q)[:3, 3] - p) < 1e-5
+        assert abs(ik.pitch_of(r.q) - ik.pitch_of(q)) < 1e-6
+    # with a roll, the few-mm offset of the tool point from the roll axis is refined away
+    q = np.array([0.3, 0.2, 0.4, 0.6, 1.0])
+    r = ik.solve(c.fk(q)[:3, 3], ik.pitch_of(q), q[4] * ik.s_roll, q_prev=q)
+    assert r.position_error_m < 5e-4 and abs(r.q[4] - q[4]) < 1e-9
+
+
+def test_exact_ik_never_jumps_between_arm_shapes():
+    """Small steps of the target give small steps of the joints (the numeric solver could flip shape)."""
+    c = SerialChain.from_urdf()
+    ik = SO101IK(c)
+    q_prev = None
+    worst = 0.0
+    for t in np.linspace(0, 2 * np.pi, 400):
+        p = np.array([0.20 + 0.04 * np.cos(t), 0.10 * np.sin(t), 0.06 + 0.02 * np.sin(2 * t)])
+        r = ik.solve(p, np.radians(-70 + 15 * np.sin(t)), 0.0, q_prev=q_prev)
+        assert r.position_error_m < 1e-3
+        if q_prev is not None:
+            worst = max(worst, float(np.abs(r.q - q_prev).max()))
+        q_prev = r.q
+    assert np.degrees(worst) < 3
+
+
+def test_clutch_starts_where_the_robot_is_and_moves_with_the_hand():
+    frames, n_still = operator_frames()
+    fol, states = run(frames, clutch=True)
+    first = next(i for i, s in enumerate(states) if s.target is not None)
+    start_tool = fol.chain.fk(states[first - 1].q)[:3, 3]
+    assert np.linalg.norm(states[first].target - fol._into_working_area(start_tool)[0]) < 0.002  # no jump at the start
+    ys = [s.target[1] for s in states if s.target is not None]
+    assert max(ys) - min(ys) > 0.08  # it still follows the hand sideways
+    # after the hand is lost for a second, it carries on from where it stopped, not from where the hand reappears
+    frames2, _ = operator_frames()
+    for f in frames2[n_still + 60 : n_still + 90]:
+        f.hand_world = None
+    fol2, st2 = run(frames2, clutch=True)
+    before = next(s for s in reversed(st2[: n_still + 60]) if s.target is not None)
+    after = next(s for s in st2[n_still + 90 :] if s.target is not None)
+    assert np.linalg.norm(after.target - before.target) < 0.01
+
+
+def test_clutch_open_holds_the_robot():
+    frames, n_still = operator_frames()
+    fol = LiveFollower(SerialChain.from_urdf(), LiveConfig(clutch=True))
+    states = []
+    for i, f in enumerate(frames):
+        if i == n_still + 40:
+            fol.set_engaged(False)
+        if i == n_still + 100:
+            fol.set_engaged(True)
+        states.append(copy.deepcopy(fol.update(f)))
+    held = states[n_still + 45 : n_still + 100]
+    assert all(s.mode == HOLD for s in held) and np.allclose(held[0].q, held[-1].q)
+    # engaging again starts from where the robot stood
+    back = next(s for s in states[n_still + 100 :] if s.target is not None)
+    assert np.linalg.norm(back.target - fol._into_working_area(fol.chain.fk(held[-1].q)[:3, 3])[0]) < 0.002

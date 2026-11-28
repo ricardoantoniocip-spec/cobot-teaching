@@ -35,6 +35,8 @@ from .kinematics import SerialChain, make_transform, tool_down
 MODEL_DIR = Path(__file__).resolve().parents[1] / "models"
 MODEL_URLS = {
     "pose_landmarker_full.task": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",
+    "pose_landmarker_lite.task": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
+    "pose_landmarker_heavy.task": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task",
     "hand_landmarker.task": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
 }
 
@@ -44,9 +46,16 @@ POSE = {
     "right": {"shoulder": 12, "elbow": 14, "wrist": 16},
 }
 L_SHOULDER, R_SHOULDER, L_HIP, R_HIP = 11, 12, 23, 24
-MIN_VISIBILITY = 0.5  # shoulder, elbow and wrist must all be seen at least this surely
+MIN_VISIBILITY = 0.5  # how sure the detector must be to call a body point "seen" (drawn in white)
+# The robot follows the wrist and hand. The shoulder only matters as a fixed reference, and it is
+# the point a laptop camera loses first (edge of the picture, hidden behind the arm, a dark top).
+# Requiring shoulder, elbow AND wrist at 0.5 threw away every picture where the shoulder was unsure,
+# hand included, so the robot never moved. Now: a picture counts when the wrist is seen; the shoulder
+# is needed only during calibration, and less surely (MediaPipe still estimates its position well).
+WRIST_MIN_VIS = 0.4
+SHOULDER_MIN_VIS = 0.3  # during calibration only
 # MediaPipe hand landmark numbers.
-H_WRIST, H_THUMB_TIP, H_INDEX_MCP, H_INDEX_TIP, H_PINKY_MCP = 0, 4, 5, 8, 17
+H_WRIST, H_THUMB_TIP, H_INDEX_MCP, H_INDEX_TIP, H_MIDDLE_MCP, H_PINKY_MCP = 0, 4, 5, 8, 9, 17
 HAND_BONES = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8), (5, 9), (9, 10), (10, 11), (11, 12),
               (9, 13), (13, 14), (14, 15), (15, 16), (13, 17), (17, 18), (18, 19), (19, 20), (0, 17)]  # fmt: skip
 
@@ -100,10 +109,11 @@ class PoseResult:
 # ---------------------------------------------------------------- detectors
 
 
-def ensure_models() -> dict[str, Path]:
-    """Download the two MediaPipe model files once (17 MB, not stored in git)."""
+def ensure_models(names: tuple[str, ...] = ("pose_landmarker_full.task", "hand_landmarker.task")) -> dict[str, Path]:
+    """Download the MediaPipe model files once (not stored in git). Only the ones asked for."""
     paths = {}
-    for name, url in MODEL_URLS.items():
+    for name in names:
+        url = MODEL_URLS[name]
         dest = MODEL_DIR / name
         if not dest.exists():
             print(f"Downloading {name}")
@@ -156,7 +166,7 @@ def track_video(video: Path, arm: str = "right", markers=None, camera=None, over
         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)))
         ts_ms = int(round(idx * 1000 / fps))
         pr = pose_det.detect_for_video(mp_img, ts_ms)
-        if pr.pose_landmarks and min(pr.pose_landmarks[0][k].visibility for k in POSE[arm].values()) >= MIN_VISIBILITY:
+        if pr.pose_landmarks and arm_seen(np.array([p.visibility for p in pr.pose_landmarks[0]]), arm):
             f.pose_px = np.array([[p.x * w, p.y * h] for p in pr.pose_landmarks[0]])
             f.pose_vis = np.array([p.visibility for p in pr.pose_landmarks[0]])
             f.pose_world = np.array([[p.x, p.y, p.z] for p in pr.pose_world_landmarks[0]])
@@ -231,6 +241,44 @@ def draw_overlay(img: np.ndarray, f: ArmFrame, arm: str) -> np.ndarray:
 
 
 # ---------------------------------------------------------------- geometry (no detector needed, unit tested)
+
+
+def arm_seen(vis: np.ndarray, arm: str) -> bool:
+    """Is the working arm usable in this picture? Only the wrist has to be seen (see WRIST_MIN_VIS)."""
+    return bool(vis[POSE[arm]["wrist"]] >= WRIST_MIN_VIS)
+
+
+def hand_frame(hand_world: np.ndarray) -> np.ndarray:
+    """3x3, columns: the hand's forward (wrist to middle knuckle), across the knuckles, and the palm normal.
+
+    Same axes as hand_world (camera axes). Right-handed for a left or a right hand alike, so a change
+    of this frame between two pictures is a real rotation of the hand.
+    """
+    h = hand_world
+    fwd = h[H_MIDDLE_MCP] - h[H_WRIST]
+    fwd = fwd / (np.linalg.norm(fwd) + 1e-12)
+    across = h[H_INDEX_MCP] - h[H_PINKY_MCP]
+    across = across - np.dot(across, fwd) * fwd
+    across = across / (np.linalg.norm(across) + 1e-12)
+    return np.column_stack([fwd, across, np.cross(fwd, across)])
+
+
+def wrist_angles(hand_now: np.ndarray, hand_ref: np.ndarray, axes: np.ndarray) -> tuple[float, float]:
+    """How much the hand has tilted and rolled since a reference picture, radians.
+
+    pitch: how much further the fingers point down (positive) or up (negative), measured against
+           your own up direction, so it is the hand's direction in space, whatever the elbow does.
+    roll:  turn of the palm about the hand's own forward axis (twist part of the rotation), positive
+           by the right-hand rule about forward. Like turning a key.
+    axes:  body_axes(), to measure pitch against your up.
+    """
+    a, b = hand_frame(hand_ref), hand_frame(hand_now)
+    up = axes[:, 2]
+    pitch = float(np.arcsin(np.clip(-b[:, 0] @ up, -1, 1)) - np.arcsin(np.clip(-a[:, 0] @ up, -1, 1)))
+    r = a.T @ b  # rotation from the reference hand to the hand now, in the reference hand's axes
+    roll = float(2 * np.arctan2(r[2, 1] - r[1, 2], 1 + np.trace(r)))  # swing-twist: the twist about forward
+    roll = float((roll + np.pi) % (2 * np.pi) - np.pi)
+    return pitch, roll
 
 
 def elbow_angle_deg(shoulder: np.ndarray, elbow: np.ndarray, wrist: np.ndarray) -> float:

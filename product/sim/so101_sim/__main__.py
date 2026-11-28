@@ -80,6 +80,13 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--save", type=Path, help="record the window to this mp4")
     s.add_argument("--log", type=Path, help="write every picture's numbers to this csv")
     s.add_argument("--seconds", type=float, help="stop after this many seconds")
+    s.add_argument("--absolute", action="store_true", help="no clutch: your calibration hand is a fixed spot in the robot's work area")
+    s.add_argument("--ik", choices=["exact", "numeric"], default="exact", help="exact closed-form SO-101 IK (default) or the general numeric solver")
+    s.add_argument("--pose-model", choices=["lite", "full", "heavy"], default="full", help="body tracker size: lite is fastest, heavy most accurate")
+    s.add_argument("--reach", choices=["elbow", "depth"], default="elbow", help="forward/back from how straight your arm is (default, camera in front) or from the tracker's depth (camera at your side)")
+    s.add_argument("--no-wrist", action="store_true", help="do not use your wrist: gripper tilt from hand height only, roll fixed")
+    s.add_argument("--roll-gain", type=float, default=1.0, help="gripper roll per degree of palm turn (-1 if it turns the wrong way)")
+    s.add_argument("--flex-gain", type=float, default=1.0, help="gripper tilt per degree of hand tilt (-1 if it tilts the wrong way)")
 
     s = sub.add_parser("to-lerobot")
     s.add_argument("dir", type=Path, help="folder with episode_*.npz from `demos` or `from-video`")
@@ -154,7 +161,9 @@ def main(argv: list[str] | None = None) -> int:
         from .live import print_summary, run_live
 
         print_summary(run_live(a.video if a.video else a.camera, a.arm, a.objects, a.port, a.robot_id, a.max_speed, a.mirror, not a.no_window,
-                               not a.no_twin, a.save, a.log, a.seconds, a.device, min_height_mm=a.min_height))
+                               not a.no_twin, a.save, a.log, a.seconds, a.device, min_height_mm=a.min_height,
+                               wrist=not a.no_wrist, roll_gain=a.roll_gain, flex_gain=a.flex_gain, reach=a.reach,
+                               clutch=not a.absolute, ik=a.ik, pose_model=a.pose_model))
         return 0
 
     if a.cmd == "to-lerobot":
