@@ -75,6 +75,7 @@ class LiveConfig:
     wrist_min_cutoff_hz: float = 0.4
     wrist_beta: float = 0.6  # per rad/s
     wrist_deadband_deg: float = 6.0  # wrist changes smaller than this are ignored (tracker noise is about this big)
+    reach: str = "elbow"  # "elbow": forward from how straight your arm is (camera in front); "depth": the tracker's depth guess
     calib_still_m: float = 0.04  # calibration restarts if your hand moves more than this (your size, not the robot's)
     max_joint_speed_deg_s: float = 90.0  # no joint moves faster than this
     hand_closed_at: float = 0.62  # hand openness that fully closes the gripper (fist is about 0.45)
@@ -170,6 +171,7 @@ class LiveFollower:
         fore = np.median([np.linalg.norm(f.pose_world[j["wrist"]] - f.pose_world[j["elbow"]]) for f in frames])
         hand = np.median([np.linalg.norm(grasp_point(f.hand_world) - f.hand_world[H_WRIST]) for f in frames])
         self.scale = self.cfg.robot_reach_m / (upper + fore + hand)
+        self.upper, self.fore = float(upper), float(fore)
         rest = np.median([self._grasp_body(f) for f in frames], axis=0)
         self.z_table = float(rest[2])
         self.b_rest = rest
@@ -184,9 +186,24 @@ class LiveFollower:
         return f.pose_world[j["wrist"]] + grasp_point(f.hand_world) - f.hand_world[H_WRIST]
 
     def _grasp_body(self, f: ArmFrame) -> np.ndarray:
-        """Grasp point relative to the shoulder, in your own axes (forward, left, up), metres."""
-        j = POSE[self.cfg.arm]
+        """Grasp point relative to the (calibration) shoulder, in your own axes (forward, left, up), metres.
+
+        reach="elbow": how far forward the wrist is comes from how straight your elbow is, not from the
+        tracker's depth guess. Shoulder-to-wrist distance follows from the elbow angle and your two bone
+        lengths (law of cosines); left/right and up/down are what a camera in front of you sees well; the
+        rest of that distance must be forward. First real test (28 Nov): with depth from the tracker,
+        stretching the arm moved the robot down and back.
+        """
+        cfg = self.cfg
+        j = POSE[cfg.arm]
         wrist = (f.pose_world[j["wrist"]] - self.shoulder) @ self.axes
+        if cfg.reach == "elbow" and getattr(self, "upper", None):
+            sh_now = (f.pose_world[j["shoulder"]] - self.shoulder) @ self.axes  # you lean: the shoulder moves
+            rel = wrist - sh_now
+            ang = np.radians(elbow_angle_deg(f.pose_world[j["shoulder"]], f.pose_world[j["elbow"]], f.pose_world[j["wrist"]]))
+            d2 = self.upper**2 + self.fore**2 - 2 * self.upper * self.fore * np.cos(ang)
+            fwd = np.sqrt(max(d2 - rel[1] ** 2 - rel[2] ** 2, 0.0))
+            wrist = sh_now + np.array([fwd, rel[1], rel[2]])
         return wrist + (grasp_point(f.hand_world) - f.hand_world[H_WRIST]) @ self.axes
 
     # ------------------------------------------------------------ one picture

@@ -230,3 +230,45 @@ def test_calm_when_still_and_restarts_calibration_if_you_move():
     moving = operator_frames()[0][n_still:]  # no still part: the hand never rests
     _, states = run(moving)
     assert all(s.mode != FOLLOWING for s in states[: int(2.5 * HZ)])
+
+
+def test_stretching_the_arm_moves_the_robot_forward_even_with_bad_depth():
+    """28 Nov real test: camera in front, the tracker's depth was poor and stretching the arm moved the robot down and back.
+    Here, after calibration, the wrist's depth is squashed to a third but the elbow angle is right (MediaPipe's
+    3D body keeps bone lengths and joint angles plausible even when its distance from the camera is off)."""
+    frames, n_still = operator_frames()
+
+    def squash(fs):
+        out = []
+        for f in fs:
+            g = copy.deepcopy(f)
+            g.pose_world = g.pose_world.copy()
+            sh = g.pose_world[12]
+            d = g.pose_world[16] - sh
+            elbow_ang = np.degrees(np.arccos(np.clip(np.dot(sh - g.pose_world[14], g.pose_world[16] - g.pose_world[14])
+                                                     / np.linalg.norm(sh - g.pose_world[14]) / np.linalg.norm(g.pose_world[16] - g.pose_world[14]), -1, 1)))
+            g.pose_world[16] = sh + d * np.array([1.0, 1.0, 1 / 3])  # camera z = depth, squashed
+            g.elbow_true = elbow_ang
+            out.append(g)
+        return out
+
+    import retarget.live as L
+    true_angle = L.elbow_angle_deg
+    try:  # the tracker's elbow angle stays right even when its depth is off
+        cur = {}
+        L.elbow_angle_deg = lambda a, b, c: cur["ang"]
+        fol = LiveFollower(SerialChain.from_urdf(), LiveConfig())
+        xs, states = [], []
+        for f in frames[:n_still] + squash(frames[n_still:]):
+            cur["ang"] = getattr(f, "elbow_true", None) or true_angle(f.pose_world[12], f.pose_world[14], f.pose_world[16])
+            states.append(fol.update(f))
+        good = LiveFollower(SerialChain.from_urdf(), LiveConfig())
+        ref = []
+        for f in frames:
+            cur["ang"] = true_angle(f.pose_world[12], f.pose_world[14], f.pose_world[16])
+            ref.append(good.update(f))
+    finally:
+        L.elbow_angle_deg = true_angle
+    a = np.array([s.target for s in states if s.target is not None])
+    b = np.array([s.target for s in ref if s.target is not None])
+    assert np.median(np.linalg.norm(a - b, axis=1)) < 0.01  # squashed depth gives the same robot path

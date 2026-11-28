@@ -347,7 +347,7 @@ def check_window(cv2) -> None:
 def run_live(source=0, arm: str = "right", objects: str | None = None, port: str | None = None, robot_id: str = "follower",
              max_speed: float | None = None, mirror: bool | None = None, window: bool = True, twin: bool = True, save: Path | None = None,
              log: Path | None = None, max_seconds: float | None = None, device: str | None = None, detector=None, tracker=None, min_height_mm: float | None = None,
-             wrist: bool = True, roll_gain: float = 1.0, flex_gain: float = 1.0) -> dict:  # fmt: skip
+             wrist: bool = True, roll_gain: float = 1.0, flex_gain: float = 1.0, reach: str = "elbow") -> dict:  # fmt: skip
     """objects: None = no detector, "" = common things, "juice carton" = that thing.
     Returns a short summary (used by the tests and printed at the end)."""
     import cv2
@@ -368,7 +368,7 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
 
     chain = scripted._chain()
     cfg = LiveConfig(arm=arm, q_start=scripted.home_q(), max_joint_speed_deg_s=max_speed or (45.0 if port else 90.0), wrist=wrist,
-                     roll_gain=roll_gain, flex_gain=flex_gain)
+                     roll_gain=roll_gain, flex_gain=flex_gain, reach=reach)
     if min_height_mm is not None or port:
         # The real arm sags a few degrees and its jaws reach below the model's tool point: keep it off the table.
         cfg.table_z_m = (40.0 if min_height_mm is None else min_height_mm) / 1000
