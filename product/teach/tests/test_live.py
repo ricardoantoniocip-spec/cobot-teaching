@@ -19,9 +19,9 @@ HZ = 30.0
 
 
 def operator_frames():
-    """2.5 s with the hand resting at the pick spot (calibration), then the pick and place."""
+    """3.5 s with the hand resting at the pick spot (calibration), then the pick and place."""
     demo = synthetic_operator_frames(hz=HZ)
-    still = [copy.deepcopy(demo[2 * int(HZ)]) for _ in range(int(2.5 * HZ))]  # frame where the hand is down at the pick
+    still = [copy.deepcopy(demo[2 * int(HZ)]) for _ in range(int(3.5 * HZ))]  # frame where the hand is down at the pick
     frames = still + demo
     for i, f in enumerate(frames):
         f.t = i / HZ
@@ -148,12 +148,12 @@ def test_hand_roll_drives_wrist_roll():
     before, after, fol = wrist_run(turn)
     assert abs(after.wrist_roll_deg - 45) < 2
     d = np.degrees(after.q - before.q)
-    assert abs(abs(d[4]) - 45) < 5  # wrist_roll turns about as much as the palm
+    assert abs(abs(d[4]) - (45 - fol.cfg.wrist_deadband_deg)) < 3  # wrist_roll turns as much as the palm, less the dead band
     assert abs(d[3]) < 1  # wrist_flex stays (the arm joints follow the grasp point, which moves a little as the hand turns)
     assert after.ik_error_mm < 5
     # same sense of turning: the gripper turns about its fingers the way the palm turned about the hand's forward axis
     r_rel = fol.chain.fk(before.q)[:3, :3].T @ fol.chain.fk(after.q)[:3, :3]
-    assert np.degrees(np.arctan2(r_rel[1, 0], r_rel[0, 0])) > 35
+    assert np.degrees(np.arctan2(r_rel[1, 0], r_rel[0, 0])) > 30
     # switched off: no roll
     before, after, _ = wrist_run(turn, wrist=False)
     assert abs(np.degrees(after.q[4] - before.q[4])) < 2
@@ -173,9 +173,9 @@ def test_hand_tilt_drives_gripper_tilt():
         z = fol.chain.fk(q)[:3, 2]  # along the fingers
         return np.degrees(np.arcsin(-z[2]))
 
-    assert finger_down_deg(before.q) - finger_down_deg(after.q) > 25  # the gripper tipped up with the hand
+    assert finger_down_deg(before.q) - finger_down_deg(after.q) > 18  # the gripper tipped up with the hand
     d = np.degrees(after.q - before.q)
-    assert abs(abs(d[3]) - 30) < 3  # wrist_flex turns by the same angle (arm joints only follow the moved grasp point)
+    assert abs(abs(d[3]) - (30 - fol.cfg.wrist_deadband_deg)) < 3  # wrist_flex turns by the same angle (arm joints only follow the moved grasp point)
     assert after.ik_error_mm < 5 and not after.wrist_at_limit
 
 
@@ -208,3 +208,25 @@ def test_calibration_asks_for_the_shoulder():
     _, states = run(frames)
     assert states[0].mode == WAITING and "shoulder" in states[0].message
     assert states[-1].mode == FOLLOWING
+
+
+def test_calm_when_still_and_restarts_calibration_if_you_move():
+    rng = np.random.default_rng(1)
+    frames, n_still = operator_frames()
+    hold = frames[n_still + 15]
+    noisy = frames[:n_still]
+    for i in range(int(3 * HZ)):  # holding still, tracker noise 5 mm on the wrist and 3 deg on the hand
+        g = copy.deepcopy(hold)
+        g.t = (n_still + i) / HZ
+        g.pose_world = g.pose_world.copy()
+        g.pose_world[16] += rng.normal(0, 0.005, 3)
+        axes = body_axes(frames[:n_still])
+        rotate_hand(g, rng.normal(0, 1, 3) / np.sqrt(3), np.radians(rng.normal(0, 3)), axes)
+        noisy.append(g)
+    _, states = run(noisy)
+    late = np.array([s.q for s in states[-int(HZ):]])
+    assert np.degrees(np.ptp(late, axis=0)).max() < 4  # the robot barely shakes
+
+    moving = operator_frames()[0][n_still:]  # no still part: the hand never rests
+    _, states = run(moving)
+    assert all(s.mode != FOLLOWING for s in states[: int(2.5 * HZ)])

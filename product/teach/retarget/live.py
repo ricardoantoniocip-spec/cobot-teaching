@@ -68,7 +68,14 @@ class LiveConfig:
     tilt_from_z_m: float = 0.05
     tilt_full_z_m: float = 0.24
     tilt_max_deg: float = 85.0
-    smooth_s: float = 0.12  # low-pass on the tool point (higher = calmer but later)
+    smooth_s: float = 0.12  # (kept for old callers; the filters below do the smoothing now)
+    # One-Euro filters (Casiez 2012): very calm when you hold still, little lag when you move fast.
+    pos_min_cutoff_hz: float = 0.6  # lower = calmer when still
+    pos_beta: float = 6.0  # higher = less lag on fast moves (per m/s of the tool point)
+    wrist_min_cutoff_hz: float = 0.4
+    wrist_beta: float = 0.6  # per rad/s
+    wrist_deadband_deg: float = 6.0  # wrist changes smaller than this are ignored (tracker noise is about this big)
+    calib_still_m: float = 0.04  # calibration restarts if your hand moves more than this (your size, not the robot's)
     max_joint_speed_deg_s: float = 90.0  # no joint moves faster than this
     hand_closed_at: float = 0.62  # hand openness that fully closes the gripper (fist is about 0.45)
     hand_open_at: float = 0.84  # hand openness that fully opens it (flat hand is about 0.9)
@@ -147,6 +154,8 @@ class LiveFollower:
         self._t_seen: float | None = None
         self.axes = self.shoulder = self.hand_ref = None
         self._wrist = np.zeros(2)  # smoothed (pitch, roll), rad
+        self._f_pos = OneEuro(self.cfg.pos_min_cutoff_hz, self.cfg.pos_beta)
+        self._f_wrist = OneEuro(self.cfg.wrist_min_cutoff_hz, self.cfg.wrist_beta)
         self.scale = self.z_table = 0.0
         self.b_rest = None
 
@@ -168,6 +177,11 @@ class LiveFollower:
         self._wrist = np.zeros(2)
         self._calib = []
         self.mode = FOLLOWING
+
+    def _grasp_body_raw(self, f: ArmFrame) -> np.ndarray:
+        """Grasp point relative to the hip centre in camera axes (before calibration, for the stillness check)."""
+        j = POSE[self.cfg.arm]
+        return f.pose_world[j["wrist"]] + grasp_point(f.hand_world) - f.hand_world[H_WRIST]
 
     def _grasp_body(self, f: ArmFrame) -> np.ndarray:
         """Grasp point relative to the shoulder, in your own axes (forward, left, up), metres."""
@@ -208,6 +222,12 @@ class LiveFollower:
             st.calib_progress = min(1.0, (f.t - self._calib[0].t) / cfg.calib_s)
             st.message = "Rest your hand on the table and hold still"
             if st.calib_progress >= 1.0 and len(self._calib) >= 5:
+                g = np.array([self._grasp_body_raw(c) for c in self._calib])
+                if np.ptp(g, axis=0).max() > cfg.calib_still_m:  # you moved: the zero would be wrong
+                    self._calib = [f]
+                    st.calib_progress = 0.0
+                    st.message = "You moved: rest your hand on the table and hold still"
+                    return st
                 self._finish_calibration()
                 st.message = "Following"
                 st.scale = self.scale
@@ -224,22 +244,18 @@ class LiveFollower:
         b = self._grasp_body(f)
         pos = np.array([*cfg.rest_xy_m, cfg.table_z_m]) + self.scale * (b - self.b_rest)
         target, st.limited = self._into_working_area(pos)
-        if self._pos is None:
-            self._pos = target
-        else:
-            a = 1.0 if cfg.smooth_s <= 0 else 1.0 - np.exp(-dt / cfg.smooth_s)
-            self._pos = self._pos + a * (target - self._pos)
+        self._pos = self._f_pos(target, f.t)
         st.target = self._pos.copy()
 
         flex = roll = 0.0
         if self.hand_ref is not None:  # your wrist, relative to the calibration hand
             pitch_roll = np.array(wrist_angles(f.hand_world, self.hand_ref, self.axes))
-            a = 1.0 if cfg.smooth_s <= 0 or dt <= 0 else 1.0 - np.exp(-dt / cfg.smooth_s)
-            self._wrist = self._wrist + a * (pitch_roll - self._wrist)
+            self._wrist = self._f_wrist(pitch_roll, f.t)
             st.wrist_flex_deg, st.wrist_roll_deg = (float(v) for v in np.degrees(self._wrist))
             if cfg.wrist:
-                flex = float(np.clip(cfg.flex_gain * self._wrist[0], -np.radians(cfg.flex_max_deg), np.radians(cfg.flex_max_deg)))
-                roll = float(np.clip(cfg.roll_gain * self._wrist[1], -np.radians(cfg.roll_max_deg), np.radians(cfg.roll_max_deg)))
+                w = _deadband(self._wrist, np.radians(cfg.wrist_deadband_deg))
+                flex = float(np.clip(cfg.flex_gain * w[0], -np.radians(cfg.flex_max_deg), np.radians(cfg.flex_max_deg)))
+                roll = float(np.clip(cfg.roll_gain * w[1], -np.radians(cfg.roll_max_deg), np.radians(cfg.roll_max_deg)))
         # 1. IK puts the tool point where your hand is (gripper down near the table, tilting forward higher up)
         goal = make_transform(self.tool_rotation(self._pos), self._pos)
         res = solve_ik(self.chain, goal, self._q_ik, orientation_weight=cfg.orientation_weight, iterations=cfg.ik_iterations)
@@ -280,3 +296,35 @@ class LiveFollower:
             out[0] = 0.02
         out[2] = np.clip(out[2], cfg.table_z_m, cfg.max_z_m)
         return out, bool(np.linalg.norm(out - pos) > 0.005)
+
+
+def _deadband(x: np.ndarray, width: float) -> np.ndarray:
+    """Zero inside +-width, then continues smoothly (no jump at the edge)."""
+    return np.sign(x) * np.maximum(np.abs(x) - width, 0.0)
+
+
+class OneEuro:
+    """One-Euro filter for a vector (Casiez, Roussel, Vogel 2012). The cut-off frequency rises with speed:
+    still = heavy smoothing (no shaking), fast = light smoothing (little lag)."""
+
+    def __init__(self, min_cutoff_hz: float, beta: float, d_cutoff_hz: float = 1.0):
+        self.min_cutoff, self.beta, self.d_cutoff = min_cutoff_hz, beta, d_cutoff_hz
+        self.x = self.dx = self.t = None
+
+    @staticmethod
+    def _alpha(cutoff: float, dt: float) -> float:
+        tau = 1.0 / (2 * np.pi * cutoff)
+        return 1.0 / (1.0 + tau / dt)
+
+    def __call__(self, x: np.ndarray, t: float) -> np.ndarray:
+        x = np.asarray(x, dtype=float)
+        if self.x is None or self.t is None or t <= self.t:
+            self.x, self.dx, self.t = x.copy(), np.zeros_like(x), t
+            return x.copy()
+        dt = t - self.t
+        dx = (x - self.x) / dt
+        self.dx = self.dx + self._alpha(self.d_cutoff, dt) * (dx - self.dx)
+        cutoff = self.min_cutoff + self.beta * float(np.linalg.norm(self.dx))
+        self.x = self.x + self._alpha(cutoff, dt) * (x - self.x)
+        self.t = t
+        return self.x.copy()
