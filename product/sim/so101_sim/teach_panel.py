@@ -236,11 +236,12 @@ class RealArm:
 
     def _jaw(self) -> tuple[float, float]:
         """Real jaw opening (0 closed .. 1 open) and motor load (0..1000, 1000 = max torque)."""
-        pct = float(self.robot.bus.read("Present_Position", "gripper"))
+        # group reads: a single read raises on servo warnings like "Input voltage error" (5 V supply dips)
+        pct = float(self.robot.bus.sync_read("Present_Position", ["gripper"])["gripper"])
         m = self.mapping
         g = (pct - m.gripper_closed_pct) / (m.gripper_open_pct - m.gripper_closed_pct)
         try:
-            load = abs(float(self.robot.bus.read("Present_Load", "gripper")))
+            load = abs(float(self.robot.bus.sync_read("Present_Load", ["gripper"])["gripper"]))
         except Exception:  # noqa: BLE001  (older firmware / bus without the register: lag check only)
             load = 0.0
         return g, load

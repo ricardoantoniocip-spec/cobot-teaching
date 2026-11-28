@@ -39,13 +39,30 @@ class CloseResult:
     rows: list = field(default_factory=list)
 
 
+# Group reads/writes on purpose: a single write/read raises when the servo's status byte carries a warning such as
+# "Input voltage error" (a supply dip on the 5 V bus, seen 2026-11-28), which stopped the test half way. The group
+# commands ignore the status byte, so we read the voltage ourselves and report it instead.
+
+
 def read(bus) -> tuple[float, float]:
-    pos = float(bus.read("Present_Position", "gripper"))
+    pos = float(bus.sync_read("Present_Position", ["gripper"])["gripper"])
     try:
-        load = abs(float(bus.read("Present_Load", "gripper")))
+        load = abs(float(bus.sync_read("Present_Load", ["gripper"])["gripper"]))
     except Exception:  # noqa: BLE001
         load = 0.0
     return pos, load
+
+
+def volts(bus) -> dict[str, float]:
+    """Supply voltage seen by every servo (register is 0.1 V)."""
+    try:
+        return {m: float(v) / 10 for m, v in bus.sync_read("Present_Voltage").items()}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def set_goal(bus, pct: float) -> None:
+    bus.sync_write("Goal_Position", {"gripper": float(pct)})
 
 
 def move_gripper(bus, target_pct: float, sleep=time.sleep) -> None:
@@ -54,7 +71,7 @@ def move_gripper(bus, target_pct: float, sleep=time.sleep) -> None:
     goal = pos
     while abs(goal - target_pct) > 1e-6:
         goal += max(-STEP_PCT * 2, min(STEP_PCT * 2, target_pct - goal))
-        bus.write("Goal_Position", "gripper", goal)
+        set_goal(bus, goal)
         sleep(1 / HZ)
 
 
@@ -66,7 +83,7 @@ def close_slowly(bus, label: str, closed_pct: float, limit: float, sleep=time.sl
     stopped = "closed"
     while goal > closed_pct:
         goal = max(closed_pct, goal - STEP_PCT)
-        bus.write("Goal_Position", "gripper", goal)
+        set_goal(bus, goal)
         sleep(1 / HZ)
         pos, load = read(bus)
         peak = max(peak, load)
@@ -78,8 +95,10 @@ def close_slowly(bus, label: str, closed_pct: float, limit: float, sleep=time.sl
         if lag_n >= 3:
             stopped = "blocked"
             break
-    bus.write("Goal_Position", "gripper", pos)  # stop pushing: goal = where the jaw is
-    log(f"  {label}: stopped by {stopped} at {pos:.1f} % (goal {goal:.1f} %), peak load {peak:.0f}")
+    set_goal(bus, pos)  # stop pushing: goal = where the jaw is
+    v = volts(bus).get("gripper")
+    log(f"  {label}: stopped by {stopped} at {pos:.1f} % (goal {goal:.1f} %), peak load {peak:.0f}"
+        + (f", gripper supply {v:.1f} V" if v else ""))
     return CloseResult(label, stopped, pos, peak, rows)
 
 
@@ -100,6 +119,11 @@ def grip_test(robot, mapping: JointMapping, limit: float = 400.0, ask=input, sle
     pos, load = read(bus)
     log(f"Gripper now at {pos:.1f} %, load {load:.0f}. Open = {mapping.gripper_open_pct:.0f} %, "
         f"closed = {mapping.gripper_closed_pct:.0f} %. Safety stop at load {limit:.0f}.")
+    v = volts(bus)
+    if v:
+        log("Supply voltage per servo: " + ", ".join(f"{m} {x:.1f} V" for m, x in v.items()))
+        if min(v.values()) < 4.6:
+            log("  LOW: under 4.6 V. Check the 5 V supply (at least 4 A) and the barrel/screw connection before going on.")
     results: list[CloseResult] = []
     tests = [("A_empty", "A. Nothing between the jaws. Press Enter to close (Ctrl+C stops). "),
              ("B_soft", "B. Hold a SOFT part (sponge, foam, folded cloth) between the jaws. Press Enter. "),

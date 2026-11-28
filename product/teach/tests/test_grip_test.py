@@ -15,11 +15,16 @@ class Bus:
         self.goal = v
         self.pos = v if self.part_pct is None else max(v, self.part_pct)
 
-    def read(self, name, motor):
+    def sync_write(self, name, values):
+        self.write(name, "gripper", values["gripper"])
+
+    def sync_read(self, name, motors=None):
+        if name == "Present_Voltage":
+            return {m: 50 for m in ("shoulder_pan", "gripper")}
         if name == "Present_Position":
-            return self.pos
+            return {"gripper": self.pos}
         squeeze = max(0.0, self.pos - self.goal)
-        return self.free_load + 120 * squeeze
+        return {"gripper": self.free_load + 120 * squeeze}
 
 
 class Robot:

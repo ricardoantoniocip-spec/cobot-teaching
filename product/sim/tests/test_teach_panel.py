@@ -96,6 +96,9 @@ class FakeBus:
         self.robot = None
         self.load = 0.0
 
+    def sync_read(self, name, motors):
+        return {m: self.read(name, m) for m in motors}
+
     def read(self, name, motor):
         if name == "Present_Position":
             return self.robot.pos[f"{motor}.pos"]
