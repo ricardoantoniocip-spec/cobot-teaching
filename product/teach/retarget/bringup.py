@@ -13,6 +13,8 @@ Keep a hand on the power switch. Every move is at 15 degrees a second.
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 
 from .kinematics import ARM_JOINTS, SerialChain, make_transform, solve_ik_with_restarts, tool_down
@@ -20,7 +22,7 @@ from .robot import JointMapping, current_joints, move_to
 
 STEP_DEG = 10.0
 SPEED = np.radians(15.0)
-FIRST_POSE_M = np.array([0.18, 0.0, 0.06])  # tool point of the first real move: 18 cm in front of the base, 6 cm up
+FIRST_POSE_M = np.array([0.18, 0.0, 0.08])  # tool point of the first real move: 18 cm in front of the base, 8 cm up (raised from 6 cm after a table hit; higher is out of reach pointing down)
 
 
 def direction_words(d_mm: np.ndarray) -> str:
@@ -56,6 +58,7 @@ def bringup(robot, chain: SerialChain, ask=input, say=print, mapping: JointMappi
         if abs(moved - step) > 4:
             problems.append(f"{j}: asked {step:+.0f} deg but the motor reports {moved:+.1f}. Check the cable, the motor id and that nothing blocks it.")
         ans = ask("  Did it move that way? y = yes, n = the other way, x = it did not move, q = stop now: ").strip().lower()
+        ans = {"yes": "y", "no": "n"}.get(ans, ans)
         move_to(robot, mapping, q2, q, 1.0, SPEED)
         if ans == "q":
             say("stopped")
@@ -70,7 +73,10 @@ def bringup(robot, chain: SerialChain, ask=input, say=print, mapping: JointMappi
     say("\nSTEP 3 of 4: the gripper opens, then closes.")
     q = current_joints(robot, mapping)
     for g, word in ((1.0, "open"), (0.0, "closed"), (1.0, "open")):
-        robot.send_action(mapping.to_action(q, g))
+        # LeRobot clips each command to a few degrees (max_relative_target), so keep sending for ~1.5 s.
+        for _ in range(45):
+            robot.send_action(mapping.to_action(q, g))
+            time.sleep(1 / 30)
         ask(f"  The gripper should now be {word}. Press ENTER. ")
 
     if save:
@@ -91,7 +97,16 @@ def bringup(robot, chain: SerialChain, ask=input, say=print, mapping: JointMappi
     q = current_joints(robot, mapping)
     goal = solve_ik_with_restarts(chain, make_transform(tool_down(chain, 0.0), FIRST_POSE_M), np.array([0.0, 0.0, 0.3, 1.0, 0.0])).q
     move_to(robot, mapping, q, goal, 1.0, SPEED)
-    tip = chain.fk(current_joints(robot, mapping))[:3, 3] * 1000
+    for _ in range(30):  # keep commanding the goal for ~1 s so the joints settle before we read them
+        robot.send_action(mapping.to_action(goal, 1.0))
+        time.sleep(1 / 30)
+    reached = current_joints(robot, mapping)
+    say("  joint           asked   reached")
+    for j, a, r in zip(ARM_JOINTS, goal, reached):
+        say(f"  {j:14s} {np.degrees(a):6.1f}   {np.degrees(r):6.1f} deg")
+    tip = chain.fk(reached)[:3, 3] * 1000
     say(f"The model says the tip is now {tip[0]:.0f} mm in front of the base centre, {tip[1]:.0f} mm to the left, {tip[2]:.0f} mm above the table.")
-    say("Measure it with a ruler. Within 10 mm: good, go on to replay and live mode. More: write the numbers down and tell Claude.")
+    say("Measure it with a ruler now: the arm holds this pose. Within 10 mm: good, go on to replay and live mode. More: write the numbers down and tell Claude.")
+    # The motors switch off when the script ends (LeRobot disconnect), so the arm drops: wait until the person is ready.
+    ask("When you have measured, hold the arm with one hand and press ENTER. The motors then switch off and the arm goes limp. ")
     return 0

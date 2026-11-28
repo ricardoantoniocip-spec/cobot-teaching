@@ -315,13 +315,24 @@ class Twin:
 # ---------------------------------------------------------------- the loop
 
 
+def check_window(cv2) -> None:
+    """OpenCV's headless build (LeRobot installs it) cannot open a window: say so before the arm is connected."""
+    if any("GUI:" in ln and "NONE" in ln for ln in cv2.getBuildInformation().splitlines()):
+        raise RuntimeError("This OpenCV cannot open a window. Run: "
+                           "python -m pip install --force-reinstall --no-deps opencv-contrib-python==4.13.0.92")
+
+
 def run_live(source=0, arm: str = "right", objects: str | None = None, port: str | None = None, robot_id: str = "follower",
              max_speed: float | None = None, mirror: bool | None = None, window: bool = True, twin: bool = True, save: Path | None = None,
-             log: Path | None = None, max_seconds: float | None = None, device: str | None = None, detector=None, tracker=None) -> dict:  # fmt: skip
+             log: Path | None = None, max_seconds: float | None = None, device: str | None = None, detector=None, tracker=None, min_height_mm: float | None = None) -> dict:  # fmt: skip
     """objects: None = no detector, "" = common things, "juice carton" = that thing.
     Returns a short summary (used by the tests and printed at the end)."""
     import cv2
 
+    # Everything that can be missing is checked before the camera and the arm are opened.
+    if window:
+        check_window(cv2)
+    tracker = tracker or BodyTracker(arm)
     is_file = not isinstance(source, int)
     mirror = (not is_file) if mirror is None else mirror
     cap = cv2.VideoCapture(str(source) if is_file else source)
@@ -334,6 +345,9 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
 
     chain = scripted._chain()
     cfg = LiveConfig(arm=arm, q_start=scripted.home_q(), max_joint_speed_deg_s=max_speed or (45.0 if port else 90.0))
+    if min_height_mm is not None or port:
+        # The real arm sags a few degrees and its jaws reach below the model's tool point: keep it off the table.
+        cfg.table_z_m = (40.0 if min_height_mm is None else min_height_mm) / 1000
     robot = mapping = None
     q_now = None
     if port:
@@ -344,7 +358,6 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
         print(f"SO-101 on {port}: connected. It starts PAUSED. Press SPACE in the window to let it follow, SPACE again to stop.")
     follower = LiveFollower(chain, cfg, q_now=q_now)
     tw = Twin(follower.q, render=window or save is not None) if twin else None
-    tracker = tracker or BodyTracker(arm)
     in_step = is_file and not window  # a recorded video with nobody watching: wait for the detector, twice per video second
     watcher = ObjectWatcher([objects] if objects else None, device=device, detector=detector, in_step=in_step) if objects is not None else None
     look_every = max(1, round(0.5 * src_fps))
@@ -442,7 +455,10 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
         if hasattr(tracker, "close"):
             tracker.close()
         if window:
-            cv2.destroyAllWindows()
+            try:
+                cv2.destroyAllWindows()
+            except cv2.error:
+                pass  # never skip switching the arm off below
         if robot is not None:
             from retarget import robot as rr
 

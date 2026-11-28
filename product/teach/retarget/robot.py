@@ -52,14 +52,17 @@ class JointMapping:
         return np.array([np.radians((obs[f"{j}.pos"] - self.offsets_deg[j]) / self.signs[j]) for j in ARM_JOINTS])
 
 
-def connect(port: str, robot_id: str = "follower", max_step_deg: float = 5.0):
+def connect(port: str, robot_id: str = "follower", max_step_deg: float = 15.0):
     """Connect to the follower arm. Needs LeRobot installed and the arm calibrated."""
     try:  # LeRobot 0.6.x
         from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
     except ImportError:  # older LeRobot
         from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
 
-    # max_relative_target: LeRobot clips every single step to at most this many degrees.
+    # max_relative_target: LeRobot clips every command to at most this many degrees from where the joint is NOW.
+    # 5 deg was too tight on the real arm (2026-11-22): under gravity a joint needs more than 5 deg of position
+    # error to hold itself up, so the clip kept it from ever reaching the goal (tip ended 55 mm low).
+    # Our moves step well under 1 deg per command, so 15 deg still catches a runaway jump.
     robot = SO101Follower(SO101FollowerConfig(port=port, id=robot_id, use_degrees=True, max_relative_target=max_step_deg))
     robot.connect()
     return robot
