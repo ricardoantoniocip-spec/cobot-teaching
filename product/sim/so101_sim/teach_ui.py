@@ -185,6 +185,14 @@ def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float, e
         return None
     root.title("Robotonic  |  SO-101 Teach Pendant")
     root.configure(bg=BG)
+    try:  # same icon as the desktop shortcut
+        from pathlib import Path
+
+        icon = Path(__file__).resolve().parents[1] / "windows" / ("teach-pendant-robot.png" if arm is not None else "teach-pendant-twin.png")
+        root._icon = tk.PhotoImage(file=str(icon))
+        root.iconphoto(True, root._icon)
+    except Exception:  # noqa: BLE001
+        pass
     root.attributes("-topmost", True)
     root.minsize(1100, 700)
 
