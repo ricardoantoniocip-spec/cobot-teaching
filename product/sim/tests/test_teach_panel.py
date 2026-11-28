@@ -170,3 +170,23 @@ def test_freedrive_needs_real_arm(tmp_path):
     s = session(tmp_path)
     handle_command(s, None, "freedrive")
     assert "--port" in s.message
+
+
+def test_goto_and_delete(tmp_path):
+    from so101_sim.teach_panel import handle_command
+
+    s = session(tmp_path)
+    handle_command(s, None, "teach")
+    s.record()
+    s.set_target(PICK, 1.0)
+    s.record()
+    s.gripper(False)
+    s.set_target(HOME, 0.0)
+    handle_command(s, None, "goto", 1)
+    while s.playing:
+        s.tick()
+    np.testing.assert_allclose(s.target()[0], PICK, atol=1e-9)
+    handle_command(s, None, "goto", 2)  # a gripper step: refused
+    assert not s.playing and "MoveJ" in s.message
+    handle_command(s, None, "delete", 0)
+    assert [st.do for st in s.path.steps] == ["movej", "gripper"]

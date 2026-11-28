@@ -100,6 +100,22 @@ class TeachSession:
         s = self.path.undo()
         self.message = f"Removed: {s.text()}" if s else "Nothing to undo."
 
+    def delete(self, i: int) -> None:
+        if 0 <= i < len(self.path.steps):
+            st = self.path.steps.pop(i)
+            self.message = f"Deleted step {i + 1}: {st.text()}"
+
+    def goto(self, i: int) -> None:
+        """Move the twin to waypoint i (a one-step MoveJ at the replay speed)."""
+        if not (0 <= i < len(self.path.steps)) or self.path.steps[i].do != "movej":
+            self.message = "Select a MoveJ step to go to."
+            return
+        q, g = self.target()
+        self.traj = to_trajectory(TeachPath(steps=[self.path.steps[i]]), q_start=q, gripper_start=g,
+                                  max_speed_deg_s=self.play_speed, hz=self.hz)
+        self.k = 0
+        self.message = f"Going to step {i + 1}."
+
     def clear(self) -> None:
         self.path = TeachPath(self.path.name)
         self.message = "Path cleared."
@@ -246,6 +262,17 @@ def handle_command(s: TeachSession, arm: RealArm | None, cmd: str, arg=None, pla
         s.undo()
     elif cmd == "clear":
         s.clear()
+    elif cmd == "delete":
+        s.delete(int(arg))
+    elif cmd == "goto":  # twin only, like play
+        if arm is not None and arm.freedrive:
+            s.message = "Leave freedrive first (F)."
+        else:
+            if arm is not None:
+                arm.follow = False
+            s.goto(int(arg))
+    elif cmd == "speed":
+        s.play_speed = float(arg)
     elif cmd == "save":
         s.save(arg)
     elif cmd == "load":
@@ -348,106 +375,12 @@ def run(port: str | None = None, robot_id: str = "follower", max_speed_deg_s: fl
 
 
 def _make_panel(s: TeachSession, cmds: queue.Queue, arm: RealArm | None, play_speed: float, max_speed: float):
-    """The Teach panel (Tk). None if this Python has no Tk."""
+    """The Teach pendant window (Tk). None if this Python has no Tk."""
     try:
-        import tkinter as tk
-        from tkinter import filedialog, messagebox
+        from .teach_ui import make_panel
     except ImportError:
         return None
-    try:
-        root = tk.Tk()
-    except tk.TclError:
-        return None
-    root.title("SO-101 Teach")
-    root.attributes("-topmost", True)
-    big = ("Segoe UI", 11)
-
-    top = tk.Frame(root, padx=8, pady=6)
-    top.pack(fill="x")
-    teach_btn = tk.Button(top, text="TEACH", width=10, font=("Segoe UI", 12, "bold"), command=lambda: cmds.put("teach"))
-    teach_btn.pack(side="left")
-    tk.Button(top, text="Record waypoint (w)", font=big, command=lambda: cmds.put("record")).pack(side="left", padx=4)
-    tk.Button(top, text="Open (o)", font=big, command=lambda: cmds.put("open")).pack(side="left", padx=2)
-    tk.Button(top, text="Close (c)", font=big, command=lambda: cmds.put("close")).pack(side="left", padx=2)
-
-    def freedrive() -> None:
-        if arm.freedrive or messagebox.askyesno(
-                "Freedrive", "HOLD THE ARM with your hand now.\n\nThe arm motors switch off so you can move it like a UR in "
-                "freedrive. Without your hand it drops onto the table.\nThe gripper keeps its motor (o / c).\n\nSwitch the motors off?",
-                parent=root):
-            cmds.put("freedrive")
-
-    fd_btn = None
-    if arm is not None:
-        fd_btn = tk.Button(top, text="Freedrive (f)", font=big, command=freedrive)
-        fd_btn.pack(side="left", padx=6)
-        root.bind("f", lambda e: None if isinstance(e.widget, (tk.Entry, tk.Spinbox)) else freedrive())
-
-    mid = tk.Frame(root, padx=8)
-    mid.pack(fill="x")
-    tk.Button(mid, text="Undo (u)", command=lambda: cmds.put("undo")).pack(side="left")
-    tk.Button(mid, text="Clear", command=lambda: messagebox.askyesno("Clear", "Delete all steps of this path?", parent=root) and cmds.put("clear")).pack(side="left", padx=4)
-    tk.Label(mid, text="Name").pack(side="left", padx=(12, 2))
-    name = tk.StringVar(value=s.path.name)
-    tk.Entry(mid, textvariable=name, width=18).pack(side="left")
-    tk.Button(mid, text="Save", command=lambda: cmds.put(("save", name.get()))).pack(side="left", padx=4)
-
-    def load() -> None:
-        s.paths_dir.mkdir(parents=True, exist_ok=True)
-        f = filedialog.askopenfilename(parent=root, initialdir=str(s.paths_dir.resolve()), title="Load a path",
-                                       filetypes=[("Teach path", "*.path.json"), ("All files", "*.*")])
-        if f:
-            cmds.put(("load", f))
-
-    tk.Button(mid, text="Load...", command=load).pack(side="left")
-
-    run_f = tk.Frame(root, padx=8, pady=6)
-    run_f.pack(fill="x")
-    tk.Label(run_f, text="Speed deg/s").pack(side="left")
-    speed = tk.DoubleVar(value=play_speed)
-    tk.Spinbox(run_f, from_=5, to=90, increment=5, textvariable=speed, width=5).pack(side="left", padx=4)
-    tk.Button(run_f, text="Play in twin", font=big, command=lambda: cmds.put(("play", speed.get()))).pack(side="left", padx=4)
-
-    def run_robot() -> None:
-        v = min(speed.get(), max_speed)
-        if messagebox.askyesno("Run on the real arm",
-                               f"Clear the workspace and keep a hand near the arm.\n\nThe real arm moves first to where the twin is, "
-                               f"then through the path at {v:.0f} deg/s.\nStop = Esc or the Stop button.\n\nRun now?", parent=root):
-            cmds.put(("run_robot", v))
-
-    if arm is not None:
-        tk.Button(run_f, text="Run on robot", font=big, bg="#f5c542", command=run_robot).pack(side="left", padx=4)
-    tk.Button(run_f, text="STOP (Esc)", font=("Segoe UI", 11, "bold"), bg="#e05050", fg="white", command=lambda: cmds.put("stop")).pack(side="left", padx=4)
-
-    steps = tk.Listbox(root, height=12, width=70, font=("Consolas", 10))
-    steps.pack(fill="both", expand=True, padx=8)
-    status = tk.Label(root, anchor="w", justify="left", wraplength=520, padx=8, pady=6)
-    status.pack(fill="x")
-
-    for key, cmd in (("o", "open"), ("c", "close"), ("w", "record"), ("<Return>", "record"), ("u", "undo"), ("<space>", "follow")):
-        root.bind(key, lambda e, c=cmd: None if isinstance(e.widget, (tk.Entry, tk.Spinbox)) else cmds.put(c))
-    root.bind("<Escape>", lambda e: cmds.put("stop"), add="+")  # Esc stops even while typing a name
-
-    shown: dict = {"lines": None, "name": s.path.name}
-
-    def refresh() -> None:
-        teach_btn.config(text="TEACH ON" if s.teaching else "TEACH", bg="#4caf50" if s.teaching else root.cget("bg"),
-                         fg="white" if s.teaching else "black")
-        lines = s.path.lines()
-        if lines != shown["lines"]:
-            steps.delete(0, "end")
-            for ln in lines:
-                steps.insert("end", ln)
-            steps.see("end")
-            shown["lines"] = lines
-        if s.path.name != shown["name"]:  # loaded or saved under a new name
-            name.set(s.path.name)
-            shown["name"] = s.path.name
-        if arm is not None:
-            fd_btn.config(text="FREEDRIVE ON" if arm.freedrive else "Freedrive (f)", bg="#ff9800" if arm.freedrive else root.cget("bg"))
-        status.config(text=s.message + (f"  |  real arm: {arm.status()}" if arm is not None else ""))
-
-    return root, refresh
+    return make_panel(s, cmds, arm, play_speed, max_speed)
 
 
 def export_path(file: Path, speed_deg_s: float = 20.0) -> int:
