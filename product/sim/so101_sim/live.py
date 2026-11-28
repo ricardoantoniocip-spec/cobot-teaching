@@ -79,7 +79,7 @@ class BodyTracker:
             lm = pr.pose_landmarks[0]
             seen.body_px = np.array([[p.x * w, p.y * h] for p in lm])
             seen.body_vis = np.array([p.visibility for p in lm])
-            if min(lm[k].visibility for k in rp.POSE[self.arm].values()) >= rp.MIN_VISIBILITY:
+            if rp.arm_seen(seen.body_vis, self.arm):  # the wrist is enough; the shoulder is checked at calibration only
                 f.pose_px, f.pose_vis = seen.body_px, seen.body_vis
                 f.pose_world = np.array([[p.x, p.y, p.z] for p in pr.pose_world_landmarks[0]])
         hr = self.hands.detect_for_video(mp_img, ts)
@@ -216,10 +216,14 @@ def draw_camera(img: np.ndarray, seen: Seen, st: LiveState, arm: str, watcher: O
     if f.pose_px is not None:
         j = rp.POSE[arm]
         pts = [P(f.pose_px[j[n]]) for n in ("shoulder", "elbow", "wrist")]
-        cv2.line(out, pts[0], pts[1], (0, 160, 255), 3 * s)
-        cv2.line(out, pts[1], pts[2], (0, 160, 255), 3 * s)
-        for p in pts:
-            cv2.circle(out, p, 5 * s, (0, 100, 255), -1)
+        vis = [float(f.pose_vis[j[n]]) for n in ("shoulder", "elbow", "wrist")]
+        for (a, b), v in zip(((0, 1), (1, 2)), (min(vis[0], vis[1]), min(vis[1], vis[2]))):
+            cv2.line(out, pts[a], pts[b], (0, 160, 255) if v >= rp.MIN_VISIBILITY else (0, 0, 200), 3 * s)
+        for p, v, name in zip(pts, vis, ("shoulder", "elbow", "wrist")):
+            sure = v >= rp.MIN_VISIBILITY
+            cv2.circle(out, p, 5 * s, (0, 100, 255) if sure else (0, 0, 255), -1 if sure else 2 * s)  # hollow red = guessed
+            if not sure:
+                cv2.putText(out, f"{name} {v:.2f}", (p[0] + 8 * s, p[1] - 6 * s), cv2.FONT_HERSHEY_SIMPLEX, 0.45 * s, (0, 0, 255), s + 1)
         if st.elbow_deg is not None:
             cv2.putText(out, f"elbow {st.elbow_deg:.0f} deg", (pts[1][0] + 8 * s, pts[1][1]), cv2.FONT_HERSHEY_SIMPLEX, 0.5 * s, (0, 160, 255), s + 1)
     if f.hand_px is not None:
@@ -239,7 +243,16 @@ def draw_camera(img: np.ndarray, seen: Seen, st: LiveState, arm: str, watcher: O
     return out
 
 
-def draw_panel(st: LiveState, seen: Seen, lines_extra: list[str], width: int, height: int) -> np.ndarray:
+def _sure_line(f: rp.ArmFrame, arm: str) -> str:
+    """How sure the tracker is of shoulder, elbow and wrist (1 = sure). Under 0.5 the point is a guess."""
+    if f.pose_vis is None:
+        return "sure of  shoulder -  elbow -  wrist -"
+    j = rp.POSE[arm]
+    words = [f"{n} {f.pose_vis[j[n]]:.2f}{'' if f.pose_vis[j[n]] >= rp.MIN_VISIBILITY else '!'}" for n in ("shoulder", "elbow", "wrist")]
+    return "sure of  " + "  ".join(words)
+
+
+def draw_panel(st: LiveState, seen: Seen, lines_extra: list[str], width: int, height: int, arm: str = "right", wrist_on: bool = True) -> np.ndarray:
     import cv2
 
     img = np.full((height, width, 3), 28, np.uint8)
@@ -252,6 +265,8 @@ def draw_panel(st: LiveState, seen: Seen, lines_extra: list[str], width: int, he
         f"arm {'seen' if f.pose_world is not None else 'NOT SEEN'}   hand {'seen' if f.hand_world is not None else 'NOT SEEN'}   tracking {seen.took_ms:.0f} ms",
         ("hand openness -      " if st.openness is None else f"hand openness {st.openness:.2f}") + f"   gripper {st.gripper_open * 100:.0f}% open",
         "tool point  -" if st.target is None else "tool point  x {:.0f}  y {:.0f}  z {:.0f} mm".format(*(st.target * 1000)),
+        _sure_line(f, arm),
+        ("wrist  -" if st.wrist_flex_deg is None else f"wrist  tilt {st.wrist_flex_deg:+.0f}  roll {st.wrist_roll_deg:+.0f} deg") + ("" if wrist_on else "  (not used: --no-wrist)"),
         "joints  " + "  ".join(f"{v:.0f}" for v in np.degrees(st.q)) + " deg",
         f"IK miss {st.ik_error_mm:.0f} mm   behind {st.lag_deg:.0f} deg" + ("   AT EDGE OF REACH" if st.limited else ""),
         *lines_extra,
@@ -261,7 +276,7 @@ def draw_panel(st: LiveState, seen: Seen, lines_extra: list[str], width: int, he
     return img
 
 
-def compose(cam: np.ndarray, twin: np.ndarray | None, panel_lines: list[str], st: LiveState, seen: Seen) -> np.ndarray:
+def compose(cam: np.ndarray, twin: np.ndarray | None, panel_lines: list[str], st: LiveState, seen: Seen, arm: str = "right", wrist_on: bool = True) -> np.ndarray:
     import cv2
 
     canvas = np.full((CANVAS_H, CAM_W + SIDE_W, 3), 28, np.uint8)
@@ -273,7 +288,7 @@ def compose(cam: np.ndarray, twin: np.ndarray | None, panel_lines: list[str], st
     if twin is not None:
         canvas[:TWIN_H, CAM_W:] = cv2.cvtColor(twin, cv2.COLOR_RGB2BGR)
         top = TWIN_H
-    canvas[top:, CAM_W:] = draw_panel(st, seen, panel_lines, SIDE_W, CANVAS_H - top)
+    canvas[top:, CAM_W:] = draw_panel(st, seen, panel_lines, SIDE_W, CANVAS_H - top, arm, wrist_on)
     return canvas
 
 
@@ -315,6 +330,13 @@ class Twin:
 # ---------------------------------------------------------------- the loop
 
 
+def _sure_cols(seen: Seen, arm: str) -> list:
+    if seen.body_vis is None:
+        return ["", ""]
+    j = rp.POSE[arm]
+    return [round(float(seen.body_vis[j["shoulder"]]), 2), round(float(seen.body_vis[j["wrist"]]), 2)]
+
+
 def check_window(cv2) -> None:
     """OpenCV's headless build (LeRobot installs it) cannot open a window: say so before the arm is connected."""
     if any("GUI:" in ln and "NONE" in ln for ln in cv2.getBuildInformation().splitlines()):
@@ -324,7 +346,8 @@ def check_window(cv2) -> None:
 
 def run_live(source=0, arm: str = "right", objects: str | None = None, port: str | None = None, robot_id: str = "follower",
              max_speed: float | None = None, mirror: bool | None = None, window: bool = True, twin: bool = True, save: Path | None = None,
-             log: Path | None = None, max_seconds: float | None = None, device: str | None = None, detector=None, tracker=None, min_height_mm: float | None = None) -> dict:  # fmt: skip
+             log: Path | None = None, max_seconds: float | None = None, device: str | None = None, detector=None, tracker=None, min_height_mm: float | None = None,
+             wrist: bool = True, roll_gain: float = 1.0, flex_gain: float = 1.0) -> dict:  # fmt: skip
     """objects: None = no detector, "" = common things, "juice carton" = that thing.
     Returns a short summary (used by the tests and printed at the end)."""
     import cv2
@@ -344,7 +367,8 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
 
     chain = scripted._chain()
-    cfg = LiveConfig(arm=arm, q_start=scripted.home_q(), max_joint_speed_deg_s=max_speed or (45.0 if port else 90.0))
+    cfg = LiveConfig(arm=arm, q_start=scripted.home_q(), max_joint_speed_deg_s=max_speed or (45.0 if port else 90.0), wrist=wrist,
+                     roll_gain=roll_gain, flex_gain=flex_gain)
     if min_height_mm is not None or port:
         # The real arm sags a few degrees and its jaws reach below the model's tool point: keep it off the table.
         cfg.table_z_m = (40.0 if min_height_mm is None else min_height_mm) / 1000
@@ -368,7 +392,7 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
         log_file = open(log, "w", newline="")
         log_writer = csv.writer(log_file)
         log_writer.writerow(["t", "mode", "arm_seen", "hand_seen", "hand_openness", "elbow_deg", "x_mm", "y_mm", "z_mm",
-                             *(f"{j}_deg" for j in scene.ARM_JOINTS), "gripper_open", "ik_miss_mm", "behind_deg", "objects"])  # fmt: skip
+                             "shoulder_sure", "wrist_sure", "hand_tilt_deg", "hand_roll_deg", *(f"{j}_deg" for j in scene.ARM_JOINTS), "gripper_open", "ik_miss_mm", "behind_deg", "objects"])  # fmt: skip
 
     t0 = time.monotonic()
     n = n_arm = n_hand = n_follow = 0
@@ -408,7 +432,8 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
                 xyz = ["", "", ""] if st.target is None else [round(v * 1000, 1) for v in st.target]
                 names = ";".join(f"{nm[0]}:{d.score:.2f}" for d, nm in watcher.boxes) if watcher else ""
                 log_writer.writerow([round(t, 3), st.mode, int(seen.arm.pose_world is not None), int(seen.arm.hand_world is not None),
-                                     "" if st.openness is None else round(st.openness, 3), "" if st.elbow_deg is None else round(st.elbow_deg, 1), *xyz,
+                                     "" if st.openness is None else round(st.openness, 3), "" if st.elbow_deg is None else round(st.elbow_deg, 1), *xyz, *_sure_cols(seen, arm),
+                                     "" if st.wrist_flex_deg is None else round(st.wrist_flex_deg, 1), "" if st.wrist_roll_deg is None else round(st.wrist_roll_deg, 1),
                                      *(round(float(v), 2) for v in np.degrees(st.q)), round(st.gripper_open, 2), round(st.ik_error_mm, 1), round(st.lag_deg, 1), names])  # fmt: skip
             if window or save is not None:
                 out_line = "twin" if robot is None else f"twin + SO-101 on {port}" + (" PAUSED (SPACE)" if paused else " FOLLOWING (SPACE stops)")
@@ -422,7 +447,7 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
                         what = ", ".join(f"{nm[0]} {d.score:.2f}" for d, nm in watcher.boxes[:3]) or "nothing found"
                         lines += [f"objects on {watcher.device}: one look takes {watcher.took_s:.1f} s", f"  {what}"]
                 lines.append("q quit | c calibrate | SPACE pause | o objects | r block | s pic")
-                canvas = compose(draw_camera(img, seen, st, arm, watcher, mirror), tw.picture() if tw else None, lines, st, seen)
+                canvas = compose(draw_camera(img, seen, st, arm, watcher, mirror), tw.picture() if tw else None, lines, st, seen, arm, wrist)
                 if save is not None:
                     if writer is None:
                         writer = cv2.VideoWriter(str(save), cv2.VideoWriter_fourcc(*"mp4v"), src_fps if is_file else 20.0, canvas.shape[1::-1])

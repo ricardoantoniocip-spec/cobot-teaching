@@ -10,7 +10,12 @@ the whole video". A short calibration at the start replaces that:
 From those seconds the follower takes your body directions (forward, left, up), your arm length
 (for the scale to the robot's reach) and the table height (where your hand rests). After that,
 each picture gives a tool point for the robot, a gripper opening from how open your hand is,
-and joint angles by IK. The joints never move faster than a set speed, so a tracking jump
+a gripper tilt and roll from your wrist, and joint angles by IK.
+
+Wrist: the hand's pose during calibration (resting on the table) is "zero". Tip your fingers down or
+up from there and the gripper tilts the same way (wrist_flex); turn your palm like a key and the
+gripper rolls the same way (wrist_roll). Position still comes first: near the edge of the reach the
+arm may not manage the full tilt. The joints never move faster than a set speed, so a tracking jump
 becomes a slow move, not a jerk.
 
 Positions are NOT true millimetres (one camera, scaled arm). No detector is needed to run or
@@ -23,8 +28,24 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .kinematics import SerialChain, axis_angle_to_matrix, make_transform, solve_ik, tool_down
-from .pose import H_WRIST, POSE, ArmFrame, body_axes, elbow_angle_deg, grasp_point, hand_openness
+from .kinematics import (
+    SerialChain,
+    axis_angle_to_matrix,
+    make_transform,
+    solve_ik,
+    tool_down,
+)
+from .pose import (
+    H_WRIST,
+    POSE,
+    SHOULDER_MIN_VIS,
+    ArmFrame,
+    body_axes,
+    elbow_angle_deg,
+    grasp_point,
+    hand_openness,
+    wrist_angles,
+)
 
 WAITING, CALIBRATING, FOLLOWING, HOLD = "waiting", "calibrating", "following", "hold"
 
@@ -49,6 +70,12 @@ class LiveConfig:
     hand_open_at: float = 0.84  # hand openness that fully opens it (flat hand is about 0.9)
     hold_after_s: float = 0.3  # hand not seen for this long: the robot holds its pose
     ik_iterations: int = 40
+    wrist: bool = True  # your wrist tilts and rolls the gripper (False: tilt from height only, roll fixed)
+    flex_gain: float = 1.0  # gripper tilt per degree of hand tilt
+    roll_gain: float = 1.0  # gripper roll per degree of palm turn (-1 if it turns the wrong way)
+    flex_back_max_deg: float = 30.0  # how far past straight down the gripper may tilt back towards the base
+    roll_max_deg: float = 150.0
+    orientation_weight: float = 0.05  # IK: position always wins, this decides how hard it tries for the tilt and roll
     q_start: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.3, 1.0, 0.0]))
 
 
@@ -66,6 +93,8 @@ class LiveState:
     limited: bool = False  # the hand left the robot's working area and the target was pulled back
     openness: float | None = None
     elbow_deg: float | None = None
+    wrist_flex_deg: float | None = None  # your hand's tilt since calibration (+ = fingers further down)
+    wrist_roll_deg: float | None = None  # your palm's turn since calibration
     calib_progress: float = 0.0
     scale: float = 0.0  # robot metres per human metre
 
@@ -80,12 +109,17 @@ class LiveFollower:
         self._r_down = tool_down(chain, 0.0)
         self.recalibrate()
 
-    def tool_rotation(self, pos: np.ndarray) -> np.ndarray:
-        """Gripper direction for a tool point: down near the table, tilting forward higher up, facing away from the base."""
+    def tool_rotation(self, pos: np.ndarray, flex: float = 0.0, roll: float = 0.0) -> np.ndarray:
+        """Gripper direction for a tool point: down near the table, tilting forward higher up, facing away from the base.
+
+        flex (rad, + = further down / back towards the base) and roll (rad, about the fingers) come from your wrist.
+        """
         cfg = self.cfg
         tilt = -np.radians(cfg.tilt_max_deg) * np.clip((pos[2] - cfg.tilt_from_z_m) / (cfg.tilt_full_z_m - cfg.tilt_from_z_m), 0.0, 1.0)
+        tilt = float(np.clip(tilt + flex, -np.radians(cfg.tilt_max_deg), np.radians(cfg.flex_back_max_deg)))
         yaw = np.arctan2(pos[1], pos[0])
-        return axis_angle_to_matrix(np.array([0.0, 0.0, 1.0]), yaw) @ axis_angle_to_matrix(np.array([0.0, 1.0, 0.0]), tilt) @ self._r_down
+        r = axis_angle_to_matrix(np.array([0.0, 0.0, 1.0]), yaw) @ axis_angle_to_matrix(np.array([0.0, 1.0, 0.0]), tilt) @ self._r_down
+        return r @ axis_angle_to_matrix(np.array([0.0, 0.0, 1.0]), roll)  # tool z = along the fingers
 
     def recalibrate(self) -> None:
         self.mode = WAITING
@@ -93,7 +127,8 @@ class LiveFollower:
         self._pos: np.ndarray | None = None
         self._t_prev: float | None = None
         self._t_seen: float | None = None
-        self.axes = self.shoulder = None
+        self.axes = self.shoulder = self.hand_ref = None
+        self._wrist = np.zeros(2)  # smoothed (pitch, roll), rad
         self.scale = self.z_table = 0.0
 
     # ------------------------------------------------------------ calibration
@@ -108,6 +143,8 @@ class LiveFollower:
         hand = np.median([np.linalg.norm(grasp_point(f.hand_world) - f.hand_world[H_WRIST]) for f in frames])
         self.scale = self.cfg.robot_reach_m / (upper + fore + hand)
         self.z_table = float(np.median([self._grasp_body(f)[2] for f in frames]))
+        self.hand_ref = frames[len(frames) // 2].hand_world.copy()  # wrist "zero": the hand resting on the table
+        self._wrist = np.zeros(2)
         self._calib = []
         self.mode = FOLLOWING
 
@@ -132,6 +169,13 @@ class LiveFollower:
             st.elbow_deg = elbow_angle_deg(f.pose_world[j["shoulder"]], f.pose_world[j["elbow"]], f.pose_world[j["wrist"]])
 
         if self.mode in (WAITING, CALIBRATING):
+            shoulder_ok = seen and (f.pose_vis is None or f.pose_vis[POSE[cfg.arm]["shoulder"]] >= SHOULDER_MIN_VIS)
+            if seen and not shoulder_ok:
+                if self._calib and f.t - self._calib[-1].t > 0.5:
+                    self._calib = []
+                st.mode = self.mode = WAITING if not self._calib else CALIBRATING
+                st.message = f"Shoulder not seen: sit further back so your {cfg.arm} shoulder is in the picture"
+                return st
             if not seen:
                 if self.mode == CALIBRATING and self._calib and f.t - self._calib[-1].t > 0.5:
                     self._calib = []  # lost during calibration: start it again
@@ -167,8 +211,18 @@ class LiveFollower:
             self._pos = self._pos + a * (target - self._pos)
         st.target = self._pos.copy()
 
-        goal = make_transform(self.tool_rotation(self._pos), self._pos)
-        res = solve_ik(self.chain, goal, self.q, orientation_weight=0.02, iterations=cfg.ik_iterations)  # position wins over gripper direction
+        flex = roll = 0.0
+        if self.hand_ref is not None:
+            pitch_roll = np.array(wrist_angles(f.hand_world, self.hand_ref, self.axes))
+            a = 1.0 if cfg.smooth_s <= 0 or dt <= 0 else 1.0 - np.exp(-dt / cfg.smooth_s)
+            self._wrist = self._wrist + a * (pitch_roll - self._wrist)
+            st.wrist_flex_deg, st.wrist_roll_deg = (float(v) for v in np.degrees(self._wrist))
+            if cfg.wrist:
+                flex = cfg.flex_gain * self._wrist[0]
+                roll = float(np.clip(cfg.roll_gain * self._wrist[1], -np.radians(cfg.roll_max_deg), np.radians(cfg.roll_max_deg)))
+        goal = make_transform(self.tool_rotation(self._pos, flex, roll), self._pos)
+        # position wins over gripper direction
+        res = solve_ik(self.chain, goal, self.q, orientation_weight=cfg.orientation_weight, iterations=cfg.ik_iterations)
         st.ik_error_mm = res.position_error_m * 1000
         step = np.radians(cfg.max_joint_speed_deg_s) * dt
         dq = res.q - self.q

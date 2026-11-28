@@ -99,6 +99,14 @@ python -m so101_sim live --video take.mp4 --no-window --save out.mp4 --log out.c
 How to start: sit as you will work, **rest your working hand on the table and hold still for
 2 seconds** (yellow bar). That sets your body directions, your arm length and the table height.
 Then move. Open hand = gripper open, closed hand = gripper closed, anything in between too.
+Your wrist steers the gripper: tip your fingers down or up and the gripper tilts the same way
+(wrist_flex); turn your palm like a key and it rolls (wrist_roll). Zero is your hand as it rested
+during calibration. `--no-wrist` switches this off; `--roll-gain -1` or `--flex-gain -1` if one
+turns the wrong way on your setup.
+
+Framing a laptop camera: sit 1 to 1.5 m back, screen tilted so both shoulders and your hand on the
+table are in the picture, turned about 30 degrees so the working shoulder is not behind your arm,
+light from the front.
 
 Keys: `q` quit, `c` calibrate again, `SPACE` pause or continue the robot, `o` objects on or off,
 `r` put the block back, `s` save a picture.
@@ -107,7 +115,9 @@ What the panel tells you:
 
 | Line | Meaning | If it looks wrong |
 |---|---|---|
-| WAITING / CALIBRATING / FOLLOWING / HOLD | what the follower is doing | WAITING: both shoulders and the whole arm must be in view. HOLD: the hand is not seen |
+| WAITING / CALIBRATING / FOLLOWING / HOLD | what the follower is doing | WAITING: your shoulder and arm must be in view for the 2 s calibration; after that only wrist and hand are needed. HOLD: the hand is not seen |
+| sure of shoulder, elbow, wrist | how sure the tracker is of each point (1 = sure; `!` and a hollow red dot = under 0.5, a guess) | shoulder low: sit further back or turn a little |
+| wrist tilt, roll | your hand's tilt and palm turn since calibration, degrees | jumps around: the hand is edge-on to the camera, turn it a little towards the camera |
 | arm seen, hand seen, tracking ms | the body tracker on this picture | more light, plain sleeve, hand not edge-on to the camera |
 | hand openness, gripper % | 0.9 flat hand, 0.45 fist | a wide part keeps the number high: that is the known weak spot |
 | tool point x y z | where the robot's gripper is asked to go (mm, robot base) | AT EDGE OF REACH: your hand is outside the robot's scaled working area |
@@ -135,7 +145,10 @@ where it started, then switches off (it goes limp: keep a hand near it). First d
 - Positions are scaled from your arm, not true millimetres. One camera is weak in depth, so
   reaching towards or away from the camera is the least accurate direction.
 - The SO-101 has 5 joints. Its gripper points down near the table and tilts forward as your hand
-  goes up; it does not copy your wrist's rotation.
+  goes up; your wrist tilt adds to that and your palm turn rolls it. It cannot turn sideways
+  (yaw) the way your hand can, and near the edge of the reach position wins over tilt.
+- Wrist tilt and roll come from the hand tracker's 3D estimate, which is weakest when the hand is
+  edge-on to the camera.
 - Tested on take 1 as a recorded video (arm seen in 100% of pictures, hand in 82%, IK miss under
   4 mm) and on made-up landmarks. Not yet tested with a live webcam, on Windows, or on a graphics card.
 
