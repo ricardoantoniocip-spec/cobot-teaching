@@ -227,3 +227,108 @@ def _result(chain: SerialChain, target: np.ndarray, q: np.ndarray) -> IKResult:
         position_error_m=float(np.linalg.norm(target[:3, 3] - tool[:3, 3])),
         orientation_error_rad=float(np.linalg.norm(matrix_to_rotvec(target[:3, :3] @ tool[:3, :3].T))),
     )
+
+
+class SO101IK:
+    """Exact (closed-form) IK for the SO-101's 5 joints, read from the same URDF chain.
+
+    The SO-101 is a turning base (shoulder_pan) under a planar arm: shoulder_lift, elbow_flex and
+    wrist_flex all turn about parallel axes, and wrist_roll turns the gripper about its fingers. So:
+
+        pan    = the direction of the target, seen from above (with the arm's small sideways offset)
+        lift, elbow = a two-link triangle in the arm's vertical plane, to the wrist_flex axis
+        wrist_flex  = whatever is left to give the gripper the asked pitch
+        wrist_roll  = asked directly
+
+    Instant, gives the same answer for the same target (no search, no getting stuck, no flipping
+    between elbow-up and elbow-down), and says when a point is out of reach. A few damped-least-squares
+    steps afterwards take care of the millimetres the simple model leaves (the tool point sits a few mm
+    off the roll axis).
+
+    pitch: angle of the fingers in the arm's vertical plane, radians: 0 = pointing straight out
+    (away from the base), -pi/2 = pointing straight down.
+    """
+
+    def __init__(self, chain: SerialChain):
+        self.chain = chain
+        tool, axes, pts = chain._fk_frames(np.zeros(5))
+        # signs: how each joint turns, from the URDF axes at zero
+        self.s_pan = float(np.sign(axes[0][2]))  # + = about +z
+        self.s_plane = np.array([float(np.sign(a[1])) for a in axes[1:4]])  # + = about +y
+        self.axis_xy = pts[0][:2].copy()  # shoulder_pan turns about a vertical line here, not the base origin
+        xz = lambda p: np.array([p[0] - self.axis_xy[0], p[2]])  # noqa: E731
+        self.S, E, W, T = xz(pts[1]), xz(pts[2]), xz(pts[3]), xz(tool[:3, 3])
+        self.a, self.b, self.c = E - self.S, W - E, T - W
+        self.A, self.B = float(np.linalg.norm(self.a)), float(np.linalg.norm(self.b))
+        self.alpha0 = float(np.arctan2(self.a[1], self.a[0]))
+        self.beta0 = float(np.arctan2(self.b[1], self.b[0]))
+        f = tool[:3, 2]
+        self.psi0 = float(np.arctan2(f[2], f[0]))  # finger angle at zero
+        self.y_off = float(tool[1, 3] - self.axis_xy[1])  # sideways offset of the tool point from the pan axis
+        self.s_roll = float(np.sign(axes[4] @ f)) or 1.0  # + wrist_roll = right-hand turn about the fingers
+
+    @staticmethod
+    def _rot(v: np.ndarray, ang: float) -> np.ndarray:
+        """Turn a 2D (x, z) vector by ang (counter-clockwise seen with x right, z up)."""
+        c, s = np.cos(ang), np.sin(ang)
+        return np.array([c * v[0] - s * v[1], s * v[0] + c * v[1]])
+
+    def solve(self, pos: np.ndarray, pitch: float, roll: float = 0.0, q_prev: np.ndarray | None = None,
+              refine: int = 6) -> IKResult:  # fmt: skip
+        ch = self.chain
+        q_prev = np.zeros(5) if q_prev is None else np.asarray(q_prev, float)
+        x, y = np.asarray(pos[:2], float) - self.axis_xy
+        z = float(pos[2])
+        r = float(np.hypot(x, y))
+        xl = np.sqrt(max(r * r - self.y_off**2, 1e-9))
+        # base: turn until the target lies in the arm's plane. Turning about +z by phi adds phi to the
+        # target's angle in the arm's frame; pan turns about s_pan * z.
+        # plane: a turn of joint i by q moves plane angles by -s_i*q (about +y, x right, z up)
+        # fingers: psi = psi0 - (s1*l + s2*e + s3*f)
+        tsum = self.psi0 - pitch  # = s1*l + s2*e + s3*f
+        best = None
+        for side in (1.0, -1.0):  # reach out in front of the pan axis, or back over it
+            phi = np.arctan2(y, x) - np.arctan2(self.y_off, side * xl)
+            pan = self.s_pan * phi
+            T = np.array([side * xl, z])
+            W = T - self._rot(self.c, -tsum)
+            d = W - self.S
+            dn = float(np.linalg.norm(d))
+            k = (dn * dn - self.A**2 - self.B**2) / (2 * self.A * self.B)
+            k = float(np.clip(k, -1.0, 1.0))  # out of reach: stretch towards it
+            for sgn in (1.0, -1.0):
+                # angle between the two links after turning: (beta0 - u2) - (alpha0 - u1) where u = s*q
+                delta = sgn * np.arccos(k)  # = beta0 - alpha0 - u_e
+                u_e = self.beta0 - self.alpha0 - delta
+                v = self.A * np.array([np.cos(self.alpha0), np.sin(self.alpha0)]) + self.B * np.array([np.cos(self.beta0 - u_e), np.sin(self.beta0 - u_e)])
+                u_l = np.arctan2(v[1], v[0]) - np.arctan2(d[1], d[0])
+                u_f = tsum - u_l - u_e
+                q = np.array([pan, *(np.array([u_l, u_e, u_f]) / self.s_plane), self._roll_q(roll)])
+                q[:4] = (q[:4] + np.pi) % (2 * np.pi) - np.pi
+                over = float(np.sum(np.maximum(ch.lower - q, 0) + np.maximum(q - ch.upper, 0)))
+                score = (over > 1e-6, over, float(np.abs(q - q_prev)[:4].sum()))
+                if best is None or score < best[0]:
+                    best = (score, q)
+        q = ch.clip(best[1])
+        goal = make_transform(ch.fk(q)[:3, :3], np.asarray(pos, float))
+        if refine:
+            # position only, starting from the exact answer: fixes the few mm the model leaves out
+            q_ref = q.copy()
+            for _ in range(refine):
+                jac, tool = ch.jacobian(q_ref)
+                e = goal[:3, 3] - tool[:3, 3]
+                if np.linalg.norm(e) < 1e-5:
+                    break
+                jp = jac[:3, :4]  # keep wrist_roll as asked
+                dq = jp.T @ np.linalg.solve(jp @ jp.T + 1e-4 * np.eye(3), e)
+                q_ref[:4] = ch.clip(np.concatenate([q_ref[:4] + dq, q_ref[4:]]))[:4]
+            q = q_ref
+        return _result(ch, goal, q)
+
+    def _roll_q(self, roll: float) -> float:
+        """wrist_roll for a roll of the gripper about its fingers (right-hand rule about the fingers)."""
+        return float(roll * self.s_roll)
+
+    def pitch_of(self, q: np.ndarray) -> float:
+        """Finger angle in the arm's plane for joint angles q (inverse of what solve() asks)."""
+        return float(self.psi0 - self.s_plane @ np.asarray(q)[1:4])

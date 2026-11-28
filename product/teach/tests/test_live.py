@@ -29,6 +29,7 @@ def operator_frames():
 
 
 def run(frames, **cfg):
+    cfg.setdefault("clutch", False)  # most tests check the absolute mapping; clutch tests below switch it on
     fol = LiveFollower(SerialChain.from_urdf(), LiveConfig(**cfg))
     return fol, [copy.deepcopy(fol.update(f)) for f in frames]
 
@@ -174,9 +175,11 @@ def test_hand_tilt_drives_gripper_tilt():
         return np.degrees(np.arcsin(-z[2]))
 
     assert finger_down_deg(before.q) - finger_down_deg(after.q) > 18  # the gripper tipped up with the hand
-    d = np.degrees(after.q - before.q)
-    assert abs(abs(d[3]) - (30 - fol.cfg.wrist_deadband_deg)) < 3  # wrist_flex turns by the same angle (arm joints only follow the moved grasp point)
-    assert after.ik_error_mm < 5 and not after.wrist_at_limit
+    tipped = finger_down_deg(before.q) - finger_down_deg(after.q)
+    # the gripper tilts with the hand (30 deg less the 6 deg dead band, plus a little more from the height schedule,
+    # because turning the hand about the wrist lifts the grasp point)
+    assert 20 < tipped < 45
+    assert after.ik_error_mm < 5 and not after.wrist_at_limit  # and the tool point stays where the hand is
 
 
 def test_ik_never_jams_against_the_wrist():
@@ -287,3 +290,77 @@ def test_stretching_the_arm_moves_the_robot_forward_even_with_bad_depth():
     a = np.array([s.target for s in states if s.target is not None])
     b = np.array([s.target for s in ref if s.target is not None])
     assert np.median(np.linalg.norm(a - b, axis=1)) < 0.01  # squashed depth gives the same robot path
+
+
+
+# ---------------------------------------------------------------- exact IK and clutch (step 2, 28 Nov)
+
+from retarget.kinematics import SO101IK  # noqa: E402
+
+
+def test_exact_ik_round_trip():
+    c = SerialChain.from_urdf()
+    ik = SO101IK(c)
+    rng = np.random.default_rng(0)
+    for _ in range(300):
+        q = rng.uniform(c.lower * 0.8, c.upper * 0.8)
+        q[4] = 0.0
+        p = c.fk(q)[:3, 3]
+        r = ik.solve(p, ik.pitch_of(q), 0.0, q_prev=q, refine=0)
+        assert np.linalg.norm(c.fk(r.q)[:3, 3] - p) < 1e-5
+        assert abs(ik.pitch_of(r.q) - ik.pitch_of(q)) < 1e-6
+    # with a roll, the few-mm offset of the tool point from the roll axis is refined away
+    q = np.array([0.3, 0.2, 0.4, 0.6, 1.0])
+    r = ik.solve(c.fk(q)[:3, 3], ik.pitch_of(q), q[4] * ik.s_roll, q_prev=q)
+    assert r.position_error_m < 5e-4 and abs(r.q[4] - q[4]) < 1e-9
+
+
+def test_exact_ik_never_jumps_between_arm_shapes():
+    """Small steps of the target give small steps of the joints (the numeric solver could flip shape)."""
+    c = SerialChain.from_urdf()
+    ik = SO101IK(c)
+    q_prev = None
+    worst = 0.0
+    for t in np.linspace(0, 2 * np.pi, 400):
+        p = np.array([0.20 + 0.04 * np.cos(t), 0.10 * np.sin(t), 0.06 + 0.02 * np.sin(2 * t)])
+        r = ik.solve(p, np.radians(-70 + 15 * np.sin(t)), 0.0, q_prev=q_prev)
+        assert r.position_error_m < 1e-3
+        if q_prev is not None:
+            worst = max(worst, float(np.abs(r.q - q_prev).max()))
+        q_prev = r.q
+    assert np.degrees(worst) < 3
+
+
+def test_clutch_starts_where_the_robot_is_and_moves_with_the_hand():
+    frames, n_still = operator_frames()
+    fol, states = run(frames, clutch=True)
+    first = next(i for i, s in enumerate(states) if s.target is not None)
+    start_tool = fol.chain.fk(states[first - 1].q)[:3, 3]
+    assert np.linalg.norm(states[first].target - fol._into_working_area(start_tool)[0]) < 0.002  # no jump at the start
+    ys = [s.target[1] for s in states if s.target is not None]
+    assert max(ys) - min(ys) > 0.08  # it still follows the hand sideways
+    # after the hand is lost for a second, it carries on from where it stopped, not from where the hand reappears
+    frames2, _ = operator_frames()
+    for f in frames2[n_still + 60 : n_still + 90]:
+        f.hand_world = None
+    fol2, st2 = run(frames2, clutch=True)
+    before = next(s for s in reversed(st2[: n_still + 60]) if s.target is not None)
+    after = next(s for s in st2[n_still + 90 :] if s.target is not None)
+    assert np.linalg.norm(after.target - before.target) < 0.01
+
+
+def test_clutch_open_holds_the_robot():
+    frames, n_still = operator_frames()
+    fol = LiveFollower(SerialChain.from_urdf(), LiveConfig(clutch=True))
+    states = []
+    for i, f in enumerate(frames):
+        if i == n_still + 40:
+            fol.set_engaged(False)
+        if i == n_still + 100:
+            fol.set_engaged(True)
+        states.append(copy.deepcopy(fol.update(f)))
+    held = states[n_still + 45 : n_still + 100]
+    assert all(s.mode == HOLD for s in held) and np.allclose(held[0].q, held[-1].q)
+    # engaging again starts from where the robot stood
+    back = next(s for s in states[n_still + 100 :] if s.target is not None)
+    assert np.linalg.norm(back.target - fol._into_working_area(fol.chain.fk(held[-1].q)[:3, 3])[0]) < 0.002

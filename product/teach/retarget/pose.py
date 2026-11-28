@@ -35,6 +35,8 @@ from .kinematics import SerialChain, make_transform, tool_down
 MODEL_DIR = Path(__file__).resolve().parents[1] / "models"
 MODEL_URLS = {
     "pose_landmarker_full.task": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",
+    "pose_landmarker_lite.task": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
+    "pose_landmarker_heavy.task": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task",
     "hand_landmarker.task": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
 }
 
@@ -107,10 +109,11 @@ class PoseResult:
 # ---------------------------------------------------------------- detectors
 
 
-def ensure_models() -> dict[str, Path]:
-    """Download the two MediaPipe model files once (17 MB, not stored in git)."""
+def ensure_models(names: tuple[str, ...] = ("pose_landmarker_full.task", "hand_landmarker.task")) -> dict[str, Path]:
+    """Download the MediaPipe model files once (not stored in git). Only the ones asked for."""
     paths = {}
-    for name, url in MODEL_URLS.items():
+    for name in names:
+        url = MODEL_URLS[name]
         dest = MODEL_DIR / name
         if not dest.exists():
             print(f"Downloading {name}")

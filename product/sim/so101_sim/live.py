@@ -52,15 +52,18 @@ class Seen:
 class BodyTracker:
     """MediaPipe pose + hands, one picture at a time."""
 
-    def __init__(self, arm: str = "right"):
+    def __init__(self, arm: str = "right", pose_model: str = "full", max_width: int = 960):
+        """pose_model: lite (fastest), full, heavy (most accurate, slowest). max_width: the picture is made
+        this small before tracking (the trackers work at 256 px inside anyway; a smaller picture is faster to prepare)."""
         import mediapipe as mp
         from mediapipe.tasks.python import vision
 
-        models = rp.ensure_models()
+        pose_file = f"pose_landmarker_{pose_model}.task"
+        models = rp.ensure_models((pose_file, "hand_landmarker.task"))
         base = mp.tasks.BaseOptions
-        self.mp, self.arm, self._last_ms = mp, arm, -1
+        self.mp, self.arm, self._last_ms, self.max_width = mp, arm, -1, max_width
         self.pose = vision.PoseLandmarker.create_from_options(
-            vision.PoseLandmarkerOptions(base_options=base(model_asset_path=str(models["pose_landmarker_full.task"])), running_mode=vision.RunningMode.VIDEO))
+            vision.PoseLandmarkerOptions(base_options=base(model_asset_path=str(models[pose_file])), running_mode=vision.RunningMode.VIDEO))
         self.hands = vision.HandLandmarker.create_from_options(
             vision.HandLandmarkerOptions(base_options=base(model_asset_path=str(models["hand_landmarker.task"])), running_mode=vision.RunningMode.VIDEO, num_hands=2))
 
@@ -68,10 +71,11 @@ class BodyTracker:
         import cv2
 
         t0 = time.perf_counter()
-        h, w = img.shape[:2]
+        h, w = img.shape[:2]  # pixel positions are given in the full picture
         ts = max(int(round(t * 1000)), self._last_ms + 1)  # MediaPipe wants rising time stamps
         self._last_ms = ts
-        mp_img = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=np.ascontiguousarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)))
+        small = img if w <= self.max_width else cv2.resize(img, (self.max_width, round(h * self.max_width / w)), interpolation=cv2.INTER_AREA)
+        mp_img = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=np.ascontiguousarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB)))
         f = rp.ArmFrame(t=t)
         seen = Seen(arm=f)
         pr = self.pose.detect_for_video(mp_img, ts)
@@ -347,7 +351,8 @@ def check_window(cv2) -> None:
 def run_live(source=0, arm: str = "right", objects: str | None = None, port: str | None = None, robot_id: str = "follower",
              max_speed: float | None = None, mirror: bool | None = None, window: bool = True, twin: bool = True, save: Path | None = None,
              log: Path | None = None, max_seconds: float | None = None, device: str | None = None, detector=None, tracker=None, min_height_mm: float | None = None,
-             wrist: bool = True, roll_gain: float = 1.0, flex_gain: float = 1.0, reach: str = "elbow") -> dict:  # fmt: skip
+             wrist: bool = True, roll_gain: float = 1.0, flex_gain: float = 1.0, reach: str = "elbow", clutch: bool = True, ik: str = "exact",
+             pose_model: str = "full", camera_size: tuple[int, int] = (1280, 720), twin_every: int = 3) -> dict:  # fmt: skip
     """objects: None = no detector, "" = common things, "juice carton" = that thing.
     Returns a short summary (used by the tests and printed at the end)."""
     import cv2
@@ -355,20 +360,20 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
     # Everything that can be missing is checked before the camera and the arm are opened.
     if window:
         check_window(cv2)
-    tracker = tracker or BodyTracker(arm)
+    tracker = tracker or BodyTracker(arm, pose_model)
     is_file = not isinstance(source, int)
     mirror = (not is_file) if mirror is None else mirror
     cap = cv2.VideoCapture(str(source) if is_file else source)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open {'video ' + str(source) if is_file else f'camera {source}. Try --camera 1, or close other apps that use the webcam'}")
     if not is_file:
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, camera_size[0])  # full size: the hand tracker needs the detail when the hand is small in the picture
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_size[1])
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
 
     chain = scripted._chain()
     cfg = LiveConfig(arm=arm, q_start=scripted.home_q(), max_joint_speed_deg_s=max_speed or (45.0 if port else 90.0), wrist=wrist,
-                     roll_gain=roll_gain, flex_gain=flex_gain, reach=reach)
+                     roll_gain=roll_gain, flex_gain=flex_gain, reach=reach, clutch=clutch, ik=ik)
     if min_height_mm is not None or port:
         # The real arm sags a few degrees and its jaws reach below the model's tool point: keep it off the table.
         cfg.table_z_m = (40.0 if min_height_mm is None else min_height_mm) / 1000
@@ -397,6 +402,7 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
     t0 = time.monotonic()
     n = n_arm = n_hand = n_follow = 0
     t_prev, fps_now, twin_err = None, 0.0, 0.0
+    twin_pic = None
     ik_miss: list[float] = []
     st = LiveState()
     try:
@@ -446,8 +452,12 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
                     else:
                         what = ", ".join(f"{nm[0]} {d.score:.2f}" for d, nm in watcher.boxes[:3]) or "nothing found"
                         lines += [f"objects on {watcher.device}: one look takes {watcher.took_s:.1f} s", f"  {what}"]
-                lines.append("q quit | c calibrate | SPACE pause | o objects | r block | s pic")
-                canvas = compose(draw_camera(img, seen, st, arm, watcher, mirror), tw.picture() if tw else None, lines, st, seen, arm, wrist)
+                if clutch:
+                    lines.append("clutch " + ("ON: robot follows (g = let go)" if follower.engaged else "OPEN: robot holds (g = take hold)"))
+                lines.append("q quit | c calib | SPACE pause | g clutch | o obj | r block | s pic")
+                if tw is not None and (n % max(1, twin_every) == 1 or twin_pic is None):
+                    twin_pic = tw.picture()  # drawing the twin is slow: every few pictures is enough to watch
+                canvas = compose(draw_camera(img, seen, st, arm, watcher, mirror), twin_pic, lines, st, seen, arm, wrist)
                 if save is not None:
                     if writer is None:
                         writer = cv2.VideoWriter(str(save), cv2.VideoWriter_fourcc(*"mp4v"), src_fps if is_file else 20.0, canvas.shape[1::-1])
@@ -461,6 +471,9 @@ def run_live(source=0, arm: str = "right", objects: str | None = None, port: str
                         follower.recalibrate()
                     elif key == ord(" "):
                         paused = not paused
+                        follower.reanchor()
+                    elif key == ord("g"):
+                        follower.set_engaged(not follower.engaged)
                     elif key == ord("o") and watcher is not None:
                         watcher.enabled = not watcher.enabled
                     elif key == ord("r") and tw is not None:

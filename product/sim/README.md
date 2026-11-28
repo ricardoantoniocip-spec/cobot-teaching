@@ -105,6 +105,15 @@ calibration, and that resting place becomes the middle of the robot's working ar
 of its base), so the robot has room to move in every direction. `--no-wrist` switches this off; `--roll-gain -1` or `--flex-gain -1` if one
 turns the wrong way on your setup.
 
+Clutch (default): the robot moves by as much as your hand moves, starting from where it stands, so
+it never jumps (after calibrating, after a pause, or when your hand comes back into view). Press `g`
+to let go: the robot holds while you move your hand somewhere comfortable, `g` again to carry on,
+like lifting a mouse. `--absolute` switches the clutch off.
+
+IK is exact (closed form for the SO-101's 5 joints: no search, no flipping between arm shapes);
+`--ik numeric` brings back the general solver. `--pose-model lite` makes body tracking faster,
+`heavy` more accurate. The twin is drawn every third picture to keep the camera loop fast.
+
 Framing a laptop camera: sit 1 to 1.5 m back, screen tilted so both shoulders and your hand on the
 table are in the picture, turned about 30 degrees so the working shoulder is not behind your arm,
 light from the front.

@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .kinematics import (
+    SO101IK,
     SerialChain,
     axis_angle_to_matrix,
     make_transform,
@@ -75,6 +76,8 @@ class LiveConfig:
     wrist_min_cutoff_hz: float = 0.4
     wrist_beta: float = 0.6  # per rad/s
     wrist_deadband_deg: float = 6.0  # wrist changes smaller than this are ignored (tracker noise is about this big)
+    clutch: bool = True  # relative mode: the robot moves by how much your hand moves, from where it is (no jumps)
+    ik: str = "exact"  # "exact": closed-form SO-101 IK; "numeric": the general damped-least-squares solver
     reach: str = "elbow"  # "elbow": forward from how straight your arm is (camera in front); "depth": the tracker's depth guess
     calib_still_m: float = 0.05  # calibration restarts (at most twice) if your hand moves more than this across the picture
     max_joint_speed_deg_s: float = 90.0  # no joint moves faster than this
@@ -123,6 +126,8 @@ class LiveFollower:
         self._r_down = tool_down(chain, 0.0)
         self._q_ik = self.q.copy()  # last IK answer without the wrist added: the warm start for the next one
         self._wrist_sign = self._wrist_signs()
+        self._ik = SO101IK(chain)
+        self.engaged = True  # clutch: False = the robot holds while you move your hand back (key g)
         self.recalibrate()
 
     def _wrist_signs(self) -> np.ndarray:
@@ -160,6 +165,8 @@ class LiveFollower:
         self.scale = self.z_table = 0.0
         self.b_rest = None
         self._calib_tries = 0
+        self._anchor: dict | None = None
+        self._applied = np.zeros(2)  # (flex, roll) last sent to the wrist, rad
 
     # ------------------------------------------------------------ calibration
 
@@ -261,39 +268,40 @@ class LiveFollower:
             if self._t_seen is not None and f.t - self._t_seen > cfg.hold_after_s:
                 st.mode = HOLD
                 st.message = "Hand not seen: holding"
+                self._anchor = None  # when the hand comes back, carry on from where the robot is: no jump
             return st
         self._t_seen = f.t
+        if cfg.clutch and not self.engaged:
+            self._anchor = None
+            st.mode, st.message = HOLD, "Clutch open: move your hand where you like, press g to carry on"
+            return st
         b = self._grasp_body(f)
-        pos = np.array([*cfg.rest_xy_m, cfg.table_z_m]) + self.scale * (b - self.b_rest)
+        if cfg.clutch:
+            if self._anchor is None:
+                self._set_anchor(f, b)
+            a = self._anchor
+            pos = a["pos"] + self.scale * (b - a["b"])
+        else:
+            pos = np.array([*cfg.rest_xy_m, cfg.table_z_m]) + self.scale * (b - self.b_rest)
         target, st.limited = self._into_working_area(pos)
         self._pos = self._f_pos(target, f.t)
         st.target = self._pos.copy()
 
         flex = roll = 0.0
-        if self.hand_ref is not None:  # your wrist, relative to the calibration hand
-            pitch_roll = np.array(wrist_angles(f.hand_world, self.hand_ref, self.axes))
+        if self.hand_ref is not None:  # your wrist: change since calibration (or since the clutch took hold)
+            ref = self._anchor["hand"] if cfg.clutch else self.hand_ref
+            pitch_roll = np.array(wrist_angles(f.hand_world, ref, self.axes))
             self._wrist = self._f_wrist(pitch_roll, f.t)
             st.wrist_flex_deg, st.wrist_roll_deg = (float(v) for v in np.degrees(self._wrist))
             if cfg.wrist:
-                w = _deadband(self._wrist, np.radians(cfg.wrist_deadband_deg))
-                flex = float(np.clip(cfg.flex_gain * w[0], -np.radians(cfg.flex_max_deg), np.radians(cfg.flex_max_deg)))
-                roll = float(np.clip(cfg.roll_gain * w[1], -np.radians(cfg.roll_max_deg), np.radians(cfg.roll_max_deg)))
-        # 1. IK puts the tool point where your hand is (gripper down near the table, tilting forward higher up)
-        goal = make_transform(self.tool_rotation(self._pos), self._pos)
-        res = solve_ik(self.chain, goal, self._q_ik, orientation_weight=cfg.orientation_weight, iterations=cfg.ik_iterations)
-        if res.position_error_m > 0.01:  # stuck in a bad pose: start again from the home pose
-            retry = solve_ik(self.chain, goal, cfg.q_start, orientation_weight=cfg.orientation_weight, iterations=4 * cfg.ik_iterations)
-            if retry.position_error_m < res.position_error_m:
-                res = retry
-        self._q_ik = res.q.copy()
-        st.ik_error_mm = res.position_error_m * 1000
-        # 2. your wrist turns the two wrist joints by the same angles
-        q_cmd = res.q.copy()
-        q_cmd[3] += self._wrist_sign[0] * flex
-        q_cmd[4] += self._wrist_sign[1] * roll
-        clipped = self.chain.clip(q_cmd)
-        st.wrist_at_limit = bool(np.any(np.abs(clipped[3:] - q_cmd[3:]) > 1e-6))
-        q_cmd = clipped
+                w = _deadband(self._wrist, np.radians(cfg.wrist_deadband_deg)) * np.array([cfg.flex_gain, cfg.roll_gain])
+                if cfg.clutch:
+                    w = w + self._anchor["applied"]
+                flex = float(np.clip(w[0], -np.radians(cfg.flex_max_deg), np.radians(cfg.flex_max_deg)))
+                roll = float(np.clip(w[1], -np.radians(cfg.roll_max_deg), np.radians(cfg.roll_max_deg)))
+        self._applied = np.array([flex, roll])
+        q_cmd, ik_err, st.wrist_at_limit = self._solve(self._pos, flex, roll)
+        st.ik_error_mm = ik_err * 1000
         step = np.radians(cfg.max_joint_speed_deg_s) * dt
         dq = q_cmd - self.q
         st.lag_deg = float(np.degrees(np.abs(dq).max()))
@@ -305,7 +313,65 @@ class LiveFollower:
             self.grip += (want - self.grip) * (1.0 if dt <= 0 else min(1.0, dt / 0.08))
         st.q, st.gripper_open, st.mode = self.q, self.grip, FOLLOWING
         st.message = "Following" + (" (at the edge of the robot's reach)" if st.limited else "") + (" (wrist at its end stop)" if st.wrist_at_limit else "")
+        if cfg.clutch and not advance:
+            self._anchor = None  # paused: when it carries on, start from where the robot is
         return st
+
+    # ------------------------------------------------------------ clutch and IK
+
+    def set_engaged(self, on: bool) -> None:
+        """Clutch: off = the robot holds while you move your hand; on = it follows again from where it is."""
+        self.engaged = bool(on)
+        self._anchor = None
+
+    def reanchor(self) -> None:
+        """Carry on from where the robot is now (after a pause): no jump."""
+        self._anchor = None
+
+    def _set_anchor(self, f: ArmFrame, b: np.ndarray) -> None:
+        pos = self.chain.fk(self.q)[:3, 3]
+        pos, _ = self._into_working_area(pos)
+        self._anchor = {"b": b.copy(), "pos": pos, "hand": f.hand_world.copy(), "applied": self._applied.copy()}
+        self._f_pos = OneEuro(self.cfg.pos_min_cutoff_hz, self.cfg.pos_beta)
+        self._f_wrist = OneEuro(self.cfg.wrist_min_cutoff_hz, self.cfg.wrist_beta)
+
+    def _solve(self, pos: np.ndarray, flex: float, roll: float) -> tuple[np.ndarray, float, bool]:
+        """Joint angles for a tool point plus your wrist's tilt and roll. Returns (q, position miss m, wrist at end stop)."""
+        cfg = self.cfg
+        if cfg.ik == "numeric":
+            goal = make_transform(self.tool_rotation(pos), pos)
+            res = solve_ik(self.chain, goal, self._q_ik, orientation_weight=cfg.orientation_weight, iterations=cfg.ik_iterations)
+            if res.position_error_m > 0.01:  # stuck in a bad pose: start again from the home pose
+                retry = solve_ik(self.chain, goal, cfg.q_start, orientation_weight=cfg.orientation_weight, iterations=4 * cfg.ik_iterations)
+                if retry.position_error_m < res.position_error_m:
+                    res = retry
+            self._q_ik = res.q.copy()
+            q = res.q.copy()
+            q[3] += self._wrist_sign[0] * flex
+            q[4] += self._wrist_sign[1] * roll
+            clipped = self.chain.clip(q)
+            return clipped, res.position_error_m, bool(np.any(np.abs(clipped[3:] - q[3:]) > 1e-6))
+        # exact IK: the gripper pitch is the height schedule plus your wrist tilt, so the tool point stays
+        # where your hand is while the gripper tilts. If that pitch cannot be reached there, ease it back
+        # towards the schedule until it can.
+        tilt = -np.radians(cfg.tilt_max_deg) * np.clip((pos[2] - cfg.tilt_from_z_m) / (cfg.tilt_full_z_m - cfg.tilt_from_z_m), 0.0, 1.0)
+        pitch_sched = -np.pi / 2 - tilt  # finger angle in the arm's plane (-90 deg = straight down)
+        res = None
+        tries = [pitch_sched - k * flex for k in (1.0, 0.75, 0.5, 0.25, 0.0)]
+        tries += [pitch_sched + np.radians(d) for d in (10, 20, 30, 45, 60)]  # still not: tilt forward (reach)
+        best = None
+        for i, pitch in enumerate(tries):
+            res = self._ik.solve(pos, pitch, roll, q_prev=self._q_ik)
+            if best is None or res.position_error_m < best[1].position_error_m - 1e-4:
+                best = (i, res)
+            if res.position_error_m < 0.003:
+                break
+        k_i, res = best
+        k = 1.0 if k_i == 0 else 0.0
+        self._q_ik = res.q.copy()
+        at_limit = bool(k < 1.0 and abs(flex) > 1e-3) or bool(np.any(np.abs(res.q[3:] - self.chain.lower[3:]) < 1e-3)
+                                                             or np.any(np.abs(res.q[3:] - self.chain.upper[3:]) < 1e-3))  # fmt: skip
+        return res.q.copy(), res.position_error_m, at_limit
 
     def _into_working_area(self, pos: np.ndarray) -> tuple[np.ndarray, bool]:
         cfg = self.cfg
