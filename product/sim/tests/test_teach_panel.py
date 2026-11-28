@@ -87,3 +87,86 @@ def test_export_command(tmp_path, capsys):
     assert export_path(f, 15) == 0
     assert (tmp_path / "paths" / "only_moves.csv").exists()
     assert "no task file" in capsys.readouterr().out
+
+
+class FakeBus:
+    def __init__(self):
+        self.torque = {j: True for j in (*scene.ARM_JOINTS, "gripper")}
+        self.goals = {}
+
+    def disable_torque(self, motors):
+        for m in motors:
+            self.torque[m] = False
+
+    def enable_torque(self, motors):
+        for m in motors:
+            self.torque[m] = True
+
+    def sync_write(self, name, values):
+        assert name == "Goal_Position"
+        self.goals.update(values)
+
+
+class FakeRobot:
+    """Joints in degrees like LeRobot's SO101Follower(use_degrees=True). Motors off: the hand sets `pos`."""
+
+    def __init__(self, q_deg):
+        self.bus = FakeBus()
+        self.pos = {f"{j}.pos": float(v) for j, v in zip(scene.ARM_JOINTS, q_deg)} | {"gripper.pos": 40.0}
+        self.sent = []
+
+    def get_observation(self):
+        return dict(self.pos)
+
+    def send_action(self, action):
+        self.sent.append(dict(action))
+        for k, v in action.items():
+            if self.bus.torque[k.removesuffix(".pos")]:
+                self.pos[k] = v  # perfect servo
+        return action
+
+
+def test_freedrive_records_hand_guided_pose(tmp_path):
+    from retarget.robot import JointMapping
+    from so101_sim.teach_panel import RealArm, handle_command
+
+    s = session(tmp_path)
+    robot = FakeRobot(np.degrees(HOME))
+    arm = RealArm(robot, JointMapping(), np.radians(30) / 30)
+    handle_command(s, arm, "freedrive")
+    assert arm.freedrive and s.teaching
+    assert not any(robot.bus.torque[j] for j in scene.ARM_JOINTS) and robot.bus.torque["gripper"]
+    n_sent = len(robot.sent)
+
+    # move the arm by hand
+    robot.pos.update({f"{j}.pos": float(v) for j, v in zip(scene.ARM_JOINTS, np.degrees(PICK))})
+    arm.step(s)
+    assert len(robot.sent) == n_sent  # no arm commands while in freedrive
+    q, _ = s.target()
+    np.testing.assert_allclose(q, PICK, atol=1e-9)  # twin copies the hand-guided pose
+    handle_command(s, arm, "record")
+    handle_command(s, arm, "close")
+    arm.step(s)
+    assert robot.bus.goals["gripper"] < 40  # gripper still driven
+    handle_command(s, arm, "play")
+    assert not s.playing  # not while in freedrive
+
+    # leave freedrive: goal = where the arm is, then motors on; holds there
+    handle_command(s, arm, "freedrive")
+    assert not arm.freedrive and all(robot.bus.torque.values())
+    last = robot.sent[-1]
+    for j, v in zip(scene.ARM_JOINTS, np.degrees(PICK)):
+        assert last[f"{j}.pos"] == pytest.approx(v)
+    arm.step(s)
+    for j, v in zip(scene.ARM_JOINTS, np.degrees(PICK)):
+        assert robot.sent[-1][f"{j}.pos"] == pytest.approx(v)
+    assert [st.do for st in s.path.steps] == ["movej", "gripper"]
+    np.testing.assert_allclose(np.radians(s.path.steps[0].joints_deg), PICK, atol=1e-6)
+
+
+def test_freedrive_needs_real_arm(tmp_path):
+    from so101_sim.teach_panel import handle_command
+
+    s = session(tmp_path)
+    handle_command(s, None, "freedrive")
+    assert "--port" in s.message

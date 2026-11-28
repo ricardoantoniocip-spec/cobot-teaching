@@ -9,6 +9,11 @@ Teach panel with the buttons. Keys in the Teach panel: o open, c close, w or Ent
 u undo, Esc stop, SPACE follow/pause (real arm). Keys in the 3D view: O, C, Enter, SPACE do the same
 (MuJoCo also uses O and C to toggle two drawing options; harmless).
 
+Freedrive (real arm only, button or f in the Teach panel): like the freedrive button on a UR. The arm motors
+switch off, you move the arm by hand, the twin copies it, Record waypoint stores the pose. The gripper keeps
+its motor, so o / c still work. HOLD THE ARM before you switch it on: it has no gravity hold. Press
+Freedrive again and the arm holds where you left it.
+
 Save writes three files into paths/ (next to where you started the command):
   NAME.path.json   the taught path (waypoints + gripper steps)
   NAME.csv         joint trajectory:  python -m retarget replay NAME.csv --port COM4 --max-speed-deg 20
@@ -157,28 +162,131 @@ class TeachSession:
         self.k += 1
 
 
+class RealArm:
+    """The physical SO-101 beside the twin. Three modes:
+    paused     motors on, holds its last pose
+    follow     motors on, follows the twin (capped speed)
+    freedrive  arm motors OFF: you move the arm by hand, the twin copies it. The gripper keeps its motor (o / c).
+               Leaving freedrive: the arm holds where you left it.
+    """
+
+    def __init__(self, robot, mapping, max_step_rad: float):
+        self.robot, self.mapping, self.max_step = robot, mapping, max_step_rad
+        self.q_cmd = self.joints()
+        self.g_cmd = 1.0
+        self.follow = False
+        self.freedrive = False
+
+    def joints(self) -> np.ndarray:
+        return self.mapping.from_observation(self.robot.get_observation())
+
+    def set_freedrive(self, on: bool) -> str:
+        arm = list(scene.ARM_JOINTS)
+        if on and not self.freedrive:
+            self.follow = False
+            self.robot.bus.disable_torque(arm)
+            self.freedrive = True
+            return "FREEDRIVE: arm motors OFF. Move the arm by hand, Record waypoint (w), o / c for the gripper."
+        if not on and self.freedrive:
+            q = self.joints()
+            self.q_cmd = q
+            # goal = where the arm is now BEFORE the motors switch on, so it does not jump
+            self.robot.send_action(self.mapping.to_action(q, self.g_cmd))
+            self.robot.bus.enable_torque(arm)
+            self.freedrive = False
+            return "Freedrive off: the arm holds here."
+        return ""
+
+    def step(self, s: TeachSession) -> None:
+        """One control period. In freedrive the twin is set from the real arm, else the real arm from the twin."""
+        _, g_twin = s.target()
+        self.g_cmd = float(np.clip(g_twin, self.g_cmd - 0.05, self.g_cmd + 0.05))
+        if self.freedrive:
+            q = self.joints()
+            self.q_cmd = q
+            s.set_target(q, g_twin)  # the twin copies your hand-guided pose; Record takes it from here
+            self.robot.bus.sync_write("Goal_Position", {"gripper": self.mapping.to_action(q, self.g_cmd)["gripper.pos"]})
+            return
+        if self.follow:
+            from .mirror import twin_joints
+
+            q_twin, _ = twin_joints(s.data)
+            self.q_cmd = self.q_cmd + np.clip(q_twin - self.q_cmd, -self.max_step, self.max_step)
+        self.robot.send_action(self.mapping.to_action(self.q_cmd, self.g_cmd))  # paused: keep holding the last pose
+
+    def status(self) -> str:
+        return "FREEDRIVE (motors off)" if self.freedrive else ("FOLLOWS the twin" if self.follow else "paused")
+
+
+def handle_command(s: TeachSession, arm: RealArm | None, cmd: str, arg=None, play_speed: float = 20.0, max_speed: float = 30.0) -> None:
+    """One button press or key, from the panel or the 3D view."""
+    if cmd in ("follow", "freedrive", "run_robot") and arm is None:
+        s.message = "Needs the real arm: start with --port COM4."
+    elif cmd == "follow":
+        if arm.freedrive:
+            s.message = "Leave freedrive first (F)."
+        else:
+            arm.follow = not arm.follow
+            s.message = "Real arm FOLLOWS the twin." if arm.follow else "Real arm PAUSED (holds still)."
+    elif cmd == "freedrive":
+        s.stop()
+        on = not arm.freedrive
+        msg = arm.set_freedrive(on)
+        if on and not s.teaching:
+            s.toggle_teach()
+            msg += " Teach is ON."
+        s.message = msg
+    elif cmd == "teach":
+        s.toggle_teach()
+    elif cmd == "record":
+        s.record()
+    elif cmd in ("open", "close"):
+        s.gripper(cmd == "open")
+    elif cmd == "undo":
+        s.undo()
+    elif cmd == "clear":
+        s.clear()
+    elif cmd == "save":
+        s.save(arg)
+    elif cmd == "load":
+        try:
+            s.load(Path(arg))
+        except (OSError, ValueError, KeyError) as e:
+            s.message = f"Could not load {arg}: {e}"
+    elif cmd in ("play", "run_robot") and arm is not None and arm.freedrive:
+        s.message = "Leave freedrive first (F), then play."
+    elif cmd == "play":  # twin only: the real arm holds still
+        if arm is not None:
+            arm.follow = False
+        s.play(arg)
+        if arm is not None and s.playing:
+            s.message += " Twin only, real arm holds."
+    elif cmd == "run_robot":
+        if s.play(min(float(arg or play_speed), max_speed)):
+            arm.follow = True
+            s.message += " REAL ARM follows."
+    elif cmd == "stop":
+        s.stop()
+        if arm is not None:
+            arm.follow = False
+
+
 def run(port: str | None = None, robot_id: str = "follower", max_speed_deg_s: float = 30.0, path_file: Path | None = None,
         paths_dir: Path = Path("paths"), play_speed_deg_s: float = 20.0, hz: float = 30.0) -> int:
     import mujoco
     import mujoco.viewer
 
-    from .mirror import step_towards, twin_joints
-
     model, data = scene.load()
-    robot = mapping = None
-    q_cmd, g_cmd = np.zeros(5), 1.0
+    arm = None
     if port:
         from retarget import robot as rr
 
-        robot = rr.connect(port, robot_id)
-        mapping = rr.JointMapping.load()
-        q_cmd = rr.current_joints(robot, mapping)
-    scene.set_pose(model, data, q_cmd, g_cmd)  # twin starts where the real arm is
+        arm = RealArm(rr.connect(port, robot_id), rr.JointMapping.load(), np.radians(max_speed_deg_s) / hz)
+    scene.set_pose(model, data, arm.q_cmd if arm else np.zeros(5), 1.0)  # twin starts where the real arm is
 
     s = TeachSession(model, data, paths_dir, hz, play_speed_deg_s)
     if path_file:
         s.load(path_file)
-    state = {"follow": False}
     cmds: queue.Queue = queue.Queue()  # keys from the viewer thread and the panel, handled in the control loop
 
     def on_key(key: int) -> None:
@@ -186,69 +294,29 @@ def run(port: str | None = None, robot_id: str = "follower", max_speed_deg_s: fl
         if cmd:
             cmds.put(cmd)
 
-    def handle(cmd: str, arg=None) -> None:
-        if cmd == "follow" and robot is not None:
-            state["follow"] = not state["follow"]
-            s.message = "Real arm FOLLOWS the twin." if state["follow"] else "Real arm PAUSED (holds still)."
-        elif cmd == "teach":
-            s.toggle_teach()
-        elif cmd == "record":
-            s.record()
-        elif cmd in ("open", "close"):
-            s.gripper(cmd == "open")
-        elif cmd == "undo":
-            s.undo()
-        elif cmd == "clear":
-            s.clear()
-        elif cmd == "save":
-            s.save(arg)
-        elif cmd == "load":
-            try:
-                s.load(Path(arg))
-            except (OSError, ValueError, KeyError) as e:
-                s.message = f"Could not load {arg}: {e}"
-        elif cmd == "play":  # twin only: the real arm holds still
-            if state["follow"]:
-                state["follow"] = False
-            s.play(arg)
-            if robot is not None and s.playing:
-                s.message += " Twin only, real arm holds."
-        elif cmd == "run_robot" and robot is not None:
-            if s.play(min(float(arg or play_speed_deg_s), max_speed_deg_s)):
-                state["follow"] = True
-                s.message += " REAL ARM follows."
-        elif cmd == "stop":
-            s.stop()
-            state["follow"] = False if robot is not None else state["follow"]
-        print(s.message, flush=True)
-
-    max_step = np.radians(max_speed_deg_s) / hz
     physics_steps = max(1, round((1.0 / hz) / model.opt.timestep))
 
     def control_step(viewer) -> None:
-        nonlocal q_cmd, g_cmd
         while not cmds.empty():
             c = cmds.get()
+            c = c if isinstance(c, tuple) else (c,)
             with viewer.lock():
-                handle(*c) if isinstance(c, tuple) else handle(c)
+                handle_command(s, arm, *c, play_speed=play_speed_deg_s, max_speed=max_speed_deg_s)
+            print(s.message, flush=True)
         with viewer.lock():
             s.tick()
+            if arm is not None:
+                arm.step(s)
             for _ in range(physics_steps):
                 mujoco.mj_step(model, data)
-            if robot is not None:
-                if state["follow"]:
-                    q_twin, g_twin = twin_joints(data)
-                    q_cmd = step_towards(q_cmd, q_twin, max_step)
-                    g_cmd = float(np.clip(g_twin, g_cmd - 0.05, g_cmd + 0.05))
-                robot.send_action(mapping.to_action(q_cmd, g_cmd))  # paused: keep holding the last pose
         viewer.sync()
 
     print(__doc__.split("Save writes")[0])
-    if robot is not None:
-        print(f"SO-101 on {port}: connected. Real arm PAUSED. SPACE = follow / pause.")
+    if arm is not None:
+        print(f"SO-101 on {port}: connected. Real arm PAUSED. SPACE = follow / pause, F = freedrive (move it by hand).")
     try:
         with mujoco.viewer.launch_passive(model, data, key_callback=on_key) as viewer:
-            panel = _make_panel(s, cmds, robot is not None, state, play_speed_deg_s, max_speed_deg_s)
+            panel = _make_panel(s, cmds, arm, play_speed_deg_s, max_speed_deg_s)
             if panel is None:
                 print("No Tk on this Python: keys only (in the 3D view): Enter = record, O = open, C = close. "
                       "Teach is ON. Use `python -m so101_sim path` to save/replay from files.")
@@ -273,13 +341,13 @@ def run(port: str | None = None, robot_id: str = "follower", max_speed_deg_s: fl
                 root.after(10, loop)
                 root.mainloop()
     finally:
-        if robot is not None:
+        if arm is not None:
             print("Closing: the motors switch off now, the arm goes limp.")
-            robot.disconnect()
+            arm.robot.disconnect()
     return 0
 
 
-def _make_panel(s: TeachSession, cmds: queue.Queue, has_robot: bool, state: dict, play_speed: float, max_speed: float):
+def _make_panel(s: TeachSession, cmds: queue.Queue, arm: RealArm | None, play_speed: float, max_speed: float):
     """The Teach panel (Tk). None if this Python has no Tk."""
     try:
         import tkinter as tk
@@ -301,6 +369,19 @@ def _make_panel(s: TeachSession, cmds: queue.Queue, has_robot: bool, state: dict
     tk.Button(top, text="Record waypoint (w)", font=big, command=lambda: cmds.put("record")).pack(side="left", padx=4)
     tk.Button(top, text="Open (o)", font=big, command=lambda: cmds.put("open")).pack(side="left", padx=2)
     tk.Button(top, text="Close (c)", font=big, command=lambda: cmds.put("close")).pack(side="left", padx=2)
+
+    def freedrive() -> None:
+        if arm.freedrive or messagebox.askyesno(
+                "Freedrive", "HOLD THE ARM with your hand now.\n\nThe arm motors switch off so you can move it like a UR in "
+                "freedrive. Without your hand it drops onto the table.\nThe gripper keeps its motor (o / c).\n\nSwitch the motors off?",
+                parent=root):
+            cmds.put("freedrive")
+
+    fd_btn = None
+    if arm is not None:
+        fd_btn = tk.Button(top, text="Freedrive (f)", font=big, command=freedrive)
+        fd_btn.pack(side="left", padx=6)
+        root.bind("f", lambda e: None if isinstance(e.widget, (tk.Entry, tk.Spinbox)) else freedrive())
 
     mid = tk.Frame(root, padx=8)
     mid.pack(fill="x")
@@ -334,7 +415,7 @@ def _make_panel(s: TeachSession, cmds: queue.Queue, has_robot: bool, state: dict
                                f"then through the path at {v:.0f} deg/s.\nStop = Esc or the Stop button.\n\nRun now?", parent=root):
             cmds.put(("run_robot", v))
 
-    if has_robot:
+    if arm is not None:
         tk.Button(run_f, text="Run on robot", font=big, bg="#f5c542", command=run_robot).pack(side="left", padx=4)
     tk.Button(run_f, text="STOP (Esc)", font=("Segoe UI", 11, "bold"), bg="#e05050", fg="white", command=lambda: cmds.put("stop")).pack(side="left", padx=4)
 
@@ -362,8 +443,9 @@ def _make_panel(s: TeachSession, cmds: queue.Queue, has_robot: bool, state: dict
         if s.path.name != shown["name"]:  # loaded or saved under a new name
             name.set(s.path.name)
             shown["name"] = s.path.name
-        arm = ("  |  real arm: FOLLOWS" if state["follow"] else "  |  real arm: paused") if has_robot else ""
-        status.config(text=f"{s.message}{arm}")
+        if arm is not None:
+            fd_btn.config(text="FREEDRIVE ON" if arm.freedrive else "Freedrive (f)", bg="#ff9800" if arm.freedrive else root.cget("bg"))
+        status.config(text=s.message + (f"  |  real arm: {arm.status()}" if arm is not None else ""))
 
     return root, refresh
 

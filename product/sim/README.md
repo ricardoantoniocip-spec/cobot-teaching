@@ -320,5 +320,9 @@ python -m so101_sim view --port COM4      # real arm follows the twin (SPACE = f
 5. **Load...** a path, **Play in twin** (real arm holds still), **Run on robot** (asks first; real arm follows the twin,
    capped at `--max-speed`, default 30 deg/s). **STOP** / Esc halts both.
 
+**Freedrive** (with `--port`): press **Freedrive** (or `f`) in the Teach panel, like the freedrive button on a UR.
+Hold the arm first: the arm motors switch off and it has no gravity hold. Move it by hand, the twin copies it,
+**Record waypoint** stores the pose, `o` / `c` still drive the gripper. Press Freedrive again: the arm holds where you left it.
+
 Replay is MoveJ: all joints start and stop together, peak joint speed = the Speed box (default 20 deg/s). The gripper
 moves only while the arm stands still. Undo removes the last step. `--plain` gives the old viewer without the panel.
