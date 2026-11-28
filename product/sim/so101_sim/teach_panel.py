@@ -1,0 +1,527 @@
+"""Teach mode for the twin view: record waypoints like on a teach pendant, open/close the gripper, save, replay.
+
+    python -m so101_sim view                      twin only
+    python -m so101_sim view --port COM4          the real arm follows the twin (SPACE = follow / pause)
+    python -m so101_sim view --path paths/box.path.json     start with a saved path loaded
+
+One window opens: the Teach pendant with the 3D twin inside (drag = turn the view, right-drag = move,
+wheel = zoom). Jog each joint with its slider or the - / + buttons. --viewer also opens MuJoCo's own viewer.
+Keys in the Teach panel: o open, c close, w or Enter record a waypoint,
+u undo, Esc stop, SPACE follow/pause (real arm). Keys in the 3D view: O, C, Enter, SPACE do the same
+(MuJoCo also uses O and C to toggle two drawing options; harmless).
+
+Freedrive (real arm only, button or f in the Teach panel): like the freedrive button on a UR. The arm motors
+switch off, you move the arm by hand, the twin copies it, Record waypoint stores the pose. The gripper keeps
+its motor, so o / c still work. HOLD THE ARM before you switch it on: it has no gravity hold. Press
+Freedrive again and the arm holds where you left it.
+
+Save writes three files into paths/ (next to where you started the command):
+  NAME.path.json   the taught path (waypoints + gripper steps)
+  NAME.csv         joint trajectory:  python -m retarget replay NAME.csv --port COM4 --max-speed-deg 20
+  NAME.task.json   task file for the URScript / SO-101 generator (only if the path picks and places)
+
+Play runs the path in the twin only (the real arm holds still). Run on robot asks first, then the real
+arm follows the twin through the path, never faster than --max-speed. Stop halts both where they are.
+"""
+
+from __future__ import annotations
+
+import json
+import queue
+import time
+from pathlib import Path
+
+import numpy as np
+
+from . import scene
+from .replay import SerialChain  # also puts product/teach on the import path
+
+from retarget.demo import write_trajectory  # noqa: E402
+from retarget.teach import TeachPath, safe_name, to_task, to_trajectory  # noqa: E402
+
+# GLFW key codes seen by the MuJoCo viewer's key callback
+KEY_SPACE, KEY_ENTER, KEY_KP_ENTER, KEY_O, KEY_C = 32, 257, 335, 79, 67
+
+
+def gripper_fraction(angle_rad: float) -> float:
+    g = (angle_rad - scene.GRIPPER_CLOSED_RAD) / (scene.GRIPPER_OPEN_RAD - scene.GRIPPER_CLOSED_RAD)
+    return float(np.clip(g, 0.0, 1.0))
+
+
+class TeachSession:
+    """All teach logic, no windows: the GUI and the tests drive it through these methods."""
+
+    def __init__(self, model, data, paths_dir: Path = Path("paths"), hz: float = 30.0, play_speed_deg_s: float = 20.0):
+        self.model, self.data = model, data
+        self.chain = SerialChain.from_urdf()
+        self.paths_dir = Path(paths_dir)
+        self.hz = hz
+        self.play_speed = play_speed_deg_s
+        self.path = TeachPath()
+        self.teaching = False
+        self.traj = None  # trajectory being played
+        self.k = 0
+        self.message = "Press Teach, jog with the sliders, record waypoints."
+
+    # --- the twin's commanded pose (what the sliders say) ---------------------------------------------
+    def target(self) -> tuple[np.ndarray, float]:
+        q = np.array([self.data.actuator(j).ctrl[0] for j in scene.ARM_JOINTS])
+        return q, gripper_fraction(self.data.actuator("gripper").ctrl[0])
+
+    def set_target(self, q: np.ndarray, g: float) -> None:
+        for j, v in zip(scene.ARM_JOINTS, q):
+            self.data.actuator(j).ctrl[0] = v
+        self.data.actuator("gripper").ctrl[0] = scene.gripper_angle(g)
+
+    def jog(self, i: int, value: float) -> None:
+        """Slider jog: joint i (0-4) to value radians, or i = 5 the gripper (0 closed .. 1 open)."""
+        if self.playing:
+            return
+        q, g = self.target()
+        if i == 5:
+            g = float(np.clip(value, 0.0, 1.0))
+        else:
+            q[i] = float(np.clip(value, self.chain.lower[i], self.chain.upper[i]))
+        self.set_target(q, g)
+
+    def place_box(self, xy_m=None) -> None:
+        """Put the twin's box where the gripper tip is (x, y; it stands on the table), so the twin matches your bench."""
+        if xy_m is None:
+            q, _ = self.target()
+            xy_m = self.chain.fk(q)[:3, 3][:2]
+        x, y = (float(v) for v in xy_m)
+        yaw = np.arctan2(y, x)  # same as the scene: the box faces the robot
+        qp = self.data.joint("part").qpos
+        qp[:3] = (x, y, scene.PART_SIZE[2] / 2)
+        qp[3:7] = (np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2))
+        self.data.joint("part").qvel[:] = 0
+        import mujoco
+
+        mujoco.mj_forward(self.model, self.data)
+        self.path.box_mm = [x * 1000, y * 1000]
+        self.message = f"Box placed in the twin at x {x * 1000:.0f}, y {y * 1000:.0f} mm (saved with the program)."
+
+    # --- teaching ---------------------------------------------------------------------------------------
+    def toggle_teach(self) -> None:
+        self.teaching = not self.teaching
+        self.message = "TEACH ON: jog, then Record waypoint (w), o = open, c = close." if self.teaching else "Teach off."
+
+    def record(self) -> None:
+        if not self.teaching:
+            self.message = "Press Teach first."
+            return
+        q, g = self.target()
+        s = self.path.add_waypoint(q, g, self.chain)
+        self.message = f"Waypoint {self.path.n_waypoints} recorded: {s.text()}"
+
+    def gripper(self, open_: bool) -> None:
+        if self.playing:
+            return
+        q, _ = self.target()
+        self.set_target(q, 1.0 if open_ else 0.0)
+        if self.teaching:
+            self.path.add_gripper(open_)
+            self.message = f"Step {len(self.path.steps)}: gripper {'OPEN' if open_ else 'CLOSE'} recorded."
+        else:
+            self.message = f"Gripper {'open' if open_ else 'closed'} (not recorded: Teach is off)."
+
+    def undo(self) -> None:
+        s = self.path.undo()
+        self.message = f"Removed: {s.text()}" if s else "Nothing to undo."
+
+    def delete(self, i: int) -> None:
+        if 0 <= i < len(self.path.steps):
+            st = self.path.steps.pop(i)
+            self.message = f"Deleted step {i + 1}: {st.text()}"
+
+    def goto(self, i: int) -> None:
+        """Move the twin to waypoint i (a one-step MoveJ at the replay speed)."""
+        if not (0 <= i < len(self.path.steps)) or self.path.steps[i].do != "movej":
+            self.message = "Select a MoveJ step to go to."
+            return
+        q, g = self.target()
+        self.traj = to_trajectory(TeachPath(steps=[self.path.steps[i]]), q_start=q, gripper_start=g,
+                                  max_speed_deg_s=self.play_speed, hz=self.hz)
+        self.k = 0
+        self.message = f"Going to step {i + 1}."
+
+    def clear(self) -> None:
+        self.path = TeachPath(self.path.name, box_mm=self.path.box_mm)
+        self.message = "Path cleared."
+
+    # --- files ------------------------------------------------------------------------------------------
+    def save(self, name: str) -> list[Path]:
+        if not self.path.n_waypoints:
+            self.message = "Nothing to save: record at least one waypoint."
+            return []
+        name = safe_name(name or self.path.name)
+        self.path.name = name
+        out = [self.path.save(self.paths_dir / f"{name}.path.json")]
+        csv = self.paths_dir / f"{name}.csv"
+        write_trajectory(csv, to_trajectory(self.path, max_speed_deg_s=self.play_speed, hz=self.hz))
+        out.append(csv)
+        task = to_task(self.path, self.chain)
+        if task is not None:
+            tp = self.paths_dir / f"{name}.task.json"
+            tp.write_text(json.dumps(task, indent=2))
+            out.append(tp)
+        self.message = f"Saved {name}: " + ", ".join(p.name for p in out)
+        return out
+
+    def load(self, file: Path) -> None:
+        self.path = TeachPath.load(file)
+        if self.path.box_mm is not None:
+            self.place_box(np.asarray(self.path.box_mm) / 1000)
+        self.message = f"Loaded {self.path.name}: {self.path.n_waypoints} waypoints, {len(self.path.steps)} steps."
+
+    # --- replay -----------------------------------------------------------------------------------------
+    @property
+    def playing(self) -> bool:
+        return self.traj is not None
+
+    def play(self, speed_deg_s: float | None = None) -> bool:
+        if not self.path.n_waypoints:
+            self.message = "No waypoints to play."
+            return False
+        if speed_deg_s:
+            self.play_speed = float(speed_deg_s)
+        q, g = self.target()
+        self.teaching = False  # do not record while playing
+        self.traj = to_trajectory(self.path, q_start=q, gripper_start=g, max_speed_deg_s=self.play_speed, hz=self.hz)
+        self.k = 0
+        self.message = f"Playing {self.path.name} at {self.play_speed:.0f} deg/s ({self.traj.t[-1]:.1f} s)."
+        return True
+
+    def stop(self) -> None:
+        if self.playing:
+            self.traj = None
+            self.message = "Stopped."
+
+    def tick(self) -> None:
+        """Advance playback by one control period (call at hz)."""
+        if self.traj is None:
+            return
+        if self.k >= len(self.traj.t):
+            self.traj = None
+            self.message = f"Done: {self.path.name}."
+            return
+        self.set_target(self.traj.q[self.k], float(self.traj.gripper_open[self.k]))
+        self.k += 1
+
+
+class RealArm:
+    """The physical SO-101 beside the twin. Three modes:
+    paused     motors on, holds its last pose
+    follow     motors on, follows the twin (capped speed)
+    freedrive  arm motors OFF: you move the arm by hand, the twin copies it. The gripper keeps its motor (o / c).
+               Leaving freedrive: the arm holds where you left it.
+    """
+
+    def __init__(self, robot, mapping, max_step_rad: float, hz: float = 30.0, grip_load: float = 150.0,
+                 grip_lag: float = 0.08, grip_squeeze: float = 0.04, close_s: float = 0.8):
+        self.robot, self.mapping, self.max_step = robot, mapping, max_step_rad
+        self.q_cmd = self.joints()
+        self.g_cmd = 1.0
+        self.follow = False
+        self.freedrive = False
+        # Soft grip: close slowly, stop when the jaws meet the part (motor load high, or jaw lags the command), hold there.
+        self.grip_load, self.grip_lag, self.grip_squeeze = grip_load, grip_lag, grip_squeeze
+        self.close_step = 1.0 / (close_s * hz)
+        self.gripped_at: float | None = None  # jaw opening (0..1) where the part was felt
+        self._jaw_hist: list[float] = []
+        self._g_des = 1.0
+        self.last_load = 0.0
+        self.rest_q = self.q_cmd.copy()  # the pose at start (normally the folded rest pose): Close goes back here slowly
+
+    def joints(self) -> np.ndarray:
+        return self.mapping.from_observation(self.robot.get_observation())
+
+    def _jaw(self) -> tuple[float, float]:
+        """Real jaw opening (0 closed .. 1 open) and motor load (0..1000, 1000 = max torque)."""
+        # group reads: a single read raises on servo warnings like "Input voltage error" (5 V supply dips)
+        pct = float(self.robot.bus.sync_read("Present_Position", ["gripper"])["gripper"])
+        m = self.mapping
+        g = (pct - m.gripper_closed_pct) / (m.gripper_open_pct - m.gripper_closed_pct)
+        try:
+            load = abs(float(self.robot.bus.sync_read("Present_Load", ["gripper"])["gripper"]))
+        except Exception:  # noqa: BLE001  (older firmware / bus without the register: lag check only)
+            load = 0.0
+        return g, load
+
+    def _gripper(self, s: TeachSession) -> float:
+        g_des = self._g_des = s.target()[1]
+        if g_des >= self.g_cmd - 1e-3:  # opening or holding still
+            if g_des > (self.gripped_at if self.gripped_at is not None else 2.0) + 0.05:
+                self.gripped_at = None  # opened again: next close looks for a part again
+            if self.gripped_at is None:
+                self.g_cmd = float(np.clip(g_des, self.g_cmd - 0.05, self.g_cmd + 0.05))
+            self._jaw_hist = []
+            return self.g_cmd
+        if self.gripped_at is not None:  # part already held: keep the squeeze, close no further
+            return self.g_cmd
+        self.g_cmd = max(g_des, self.g_cmd - self.close_step)
+        jaw, self.last_load = self._jaw()
+        self._jaw_hist = (self._jaw_hist + [jaw])[-4:]
+        # A part is felt only when the jaw has STOPPED (moved < 1 % of its stroke over the last 3 readings) while the
+        # command is past it. A jaw that is just slower than the command, or the load spike of a fast start, is not a part
+        # (2026-11-28: with the faster close the old check fired in mid-air and the gripper stopped half way).
+        stalled = len(self._jaw_hist) == 4 and max(self._jaw_hist) - min(self._jaw_hist) < 0.01
+        if stalled and (jaw - self.g_cmd > self.grip_lag or self.last_load > self.grip_load):
+            self.gripped_at = max(0.0, jaw)
+            self.g_cmd = max(0.0, jaw - self.grip_squeeze)  # a little past the contact point = steady grip force
+            self._jaw_hist = []
+            s.message = f"Part gripped at {self.gripped_at * 100:.0f} % open (load {self.last_load:.0f}). Holding."
+        return self.g_cmd
+
+    @property
+    def gripper_busy(self) -> bool:
+        """Still closing toward the twin's gripper (no part felt yet): a running program waits for it."""
+        return self.gripped_at is None and self.g_cmd > self._g_des + 1e-3
+
+    def go_rest(self, speed_deg_s: float = 20.0, hz: float = 30.0) -> None:
+        """Slowly back to the start pose (motors on), so the arm is not dropped mid-air when they switch off."""
+        if self.freedrive:
+            self.set_freedrive(False)
+        q = self.joints()
+        dq = float(np.degrees(np.abs(self.rest_q - q).max()))
+        steps = max(1, int(np.ceil(max(dq / speed_deg_s, 1.0) * hz)))
+        for k in range(1, steps + 1):
+            a = k / steps
+            a = a * a * (3 - 2 * a)  # gentle start and stop
+            self.q_cmd = q + (self.rest_q - q) * a
+            self.robot.send_action(self.mapping.to_action(self.q_cmd, self.g_cmd))
+            time.sleep(1.0 / hz)
+        time.sleep(0.5)
+
+    def set_freedrive(self, on: bool) -> str:
+        arm = list(scene.ARM_JOINTS)
+        if on and not self.freedrive:
+            self.follow = False
+            self.robot.bus.disable_torque(arm)
+            self.freedrive = True
+            return "FREEDRIVE: arm motors OFF. Move the arm by hand, Record waypoint (w), o / c for the gripper."
+        if not on and self.freedrive:
+            q = self.joints()
+            self.q_cmd = q
+            # goal = where the arm is now BEFORE the motors switch on, so it does not jump
+            self.robot.send_action(self.mapping.to_action(q, self.g_cmd))
+            self.robot.bus.enable_torque(arm)
+            self.freedrive = False
+            return "Freedrive off: the arm holds here."
+        return ""
+
+    def step(self, s: TeachSession) -> None:
+        """One control period. In freedrive the twin is set from the real arm, else the real arm from the twin."""
+        g = self._gripper(s)
+        if self.freedrive:
+            q = self.joints()
+            self.q_cmd = q
+            s.set_target(q, s.target()[1])  # the twin copies your hand-guided pose; Record takes it from here
+            self.robot.bus.sync_write("Goal_Position", {"gripper": self.mapping.to_action(q, g)["gripper.pos"]})
+            return
+        if self.follow:
+            from .mirror import twin_joints
+
+            q_twin, _ = twin_joints(s.data)
+            self.q_cmd = self.q_cmd + np.clip(q_twin - self.q_cmd, -self.max_step, self.max_step)
+        self.robot.send_action(self.mapping.to_action(self.q_cmd, g))  # paused: keep holding the last pose
+
+    def status(self) -> str:
+        return "FREEDRIVE (motors off)" if self.freedrive else ("FOLLOWS the twin" if self.follow else "paused")
+
+
+def handle_command(s: TeachSession, arm: RealArm | None, cmd: str, arg=None, play_speed: float = 20.0, max_speed: float = 30.0) -> None:
+    """One button press or key, from the panel or the 3D view."""
+    if cmd in ("follow", "freedrive", "run_robot") and arm is None:
+        s.message = "Needs the real arm: start with --port COM4."
+    elif cmd == "follow":
+        if arm.freedrive:
+            s.message = "Leave freedrive first (F)."
+        else:
+            arm.follow = not arm.follow
+            s.message = "Real arm FOLLOWS the twin." if arm.follow else "Real arm PAUSED (holds still)."
+    elif cmd == "freedrive":
+        s.stop()
+        on = not arm.freedrive
+        msg = arm.set_freedrive(on)
+        if on and not s.teaching:
+            s.toggle_teach()
+            msg += " Teach is ON."
+        s.message = msg
+    elif cmd == "teach":
+        s.toggle_teach()
+    elif cmd == "record":
+        s.record()
+    elif cmd in ("open", "close"):
+        s.gripper(cmd == "open")
+    elif cmd == "undo":
+        s.undo()
+    elif cmd == "clear":
+        s.clear()
+    elif cmd == "delete":
+        s.delete(int(arg))
+    elif cmd == "goto":  # twin only, like play
+        if arm is not None and arm.freedrive:
+            s.message = "Leave freedrive first (F)."
+        else:
+            if arm is not None:
+                arm.follow = False
+            s.goto(int(arg))
+    elif cmd == "box":
+        s.place_box()
+    elif cmd == "jog":
+        if arm is None or not arm.freedrive:
+            s.jog(*arg)
+    elif cmd == "speed":
+        s.play_speed = float(arg)
+    elif cmd == "save":
+        s.save(arg)
+    elif cmd == "load":
+        try:
+            s.load(Path(arg))
+        except (OSError, ValueError, KeyError) as e:
+            s.message = f"Could not load {arg}: {e}"
+    elif cmd in ("play", "run_robot") and arm is not None and arm.freedrive:
+        s.message = "Leave freedrive first (F), then play."
+    elif cmd == "play":  # twin only: the real arm holds still
+        if arm is not None:
+            arm.follow = False
+        s.play(arg)
+        if arm is not None and s.playing:
+            s.message += " Twin only, real arm holds."
+    elif cmd == "run_robot":
+        if s.play(min(float(arg or play_speed), max_speed)):
+            arm.follow = True
+            s.message += " REAL ARM follows."
+    elif cmd == "stop":
+        s.stop()
+        if arm is not None:
+            arm.follow = False
+
+
+def run(port: str | None = None, robot_id: str = "follower", max_speed_deg_s: float = 30.0, path_file: Path | None = None,
+        paths_dir: Path = Path("paths"), play_speed_deg_s: float = 20.0, hz: float = 30.0, viewer: bool = False,
+        grip_load: float = 150.0) -> int:
+    import contextlib
+
+    import mujoco
+
+    model, data = scene.load()
+    arm = None
+    if port:
+        from retarget import robot as rr
+
+        arm = RealArm(rr.connect(port, robot_id), rr.JointMapping.load(), np.radians(max_speed_deg_s) / hz, hz, grip_load)
+    scene.set_pose(model, data, arm.q_cmd if arm else np.zeros(5), 1.0)  # twin starts where the real arm is
+
+    s = TeachSession(model, data, paths_dir, hz, play_speed_deg_s)
+    if path_file:
+        s.load(path_file)
+    cmds: queue.Queue = queue.Queue()  # keys and buttons, handled in the control loop
+    physics_steps = max(1, round((1.0 / hz) / model.opt.timestep))
+
+    def control_step(v=None) -> None:
+        def lock():
+            return v.lock() if v is not None else contextlib.nullcontext()
+
+        while not cmds.empty():
+            c = cmds.get()
+            c = c if isinstance(c, tuple) else (c,)
+            with lock():
+                handle_command(s, arm, *c, play_speed=play_speed_deg_s, max_speed=max_speed_deg_s)
+            if c[0] not in ("jog", "speed"):
+                print(s.message, flush=True)
+        with lock():
+            if not (arm is not None and arm.follow and s.playing and arm.gripper_busy):
+                s.tick()  # a program on the real arm waits here until the gripper has closed or felt the part
+            if arm is not None:
+                arm.step(s)
+            for _ in range(physics_steps):
+                mujoco.mj_step(model, data)
+        if v is not None:
+            v.sync()
+
+    def tk_loop(root, refresh, v=None) -> None:
+        def loop() -> None:
+            if v is not None and not v.is_running():
+                root.destroy()
+                return
+            t0 = time.monotonic()
+            control_step(v)
+            refresh()
+            root.after(max(1, int(1000 * (1.0 / hz - (time.monotonic() - t0)))), loop)
+
+        root.protocol("WM_DELETE_WINDOW", lambda: (v.close() if v is not None else None, root.destroy()))
+        root.after(10, loop)
+        root.mainloop()
+
+    print(__doc__.split("Save writes")[0])
+    if arm is not None:
+        print(f"SO-101 on {port}: connected. Real arm PAUSED. SPACE = follow / pause, F = freedrive (move it by hand).")
+    try:
+        panel = None if viewer else _make_panel(s, cmds, arm, play_speed_deg_s, max_speed_deg_s, embed_view=True)
+        if panel is not None:  # one window: pendant with the 3D twin inside
+            tk_loop(*panel)
+            return 0
+        import mujoco.viewer
+
+        def on_key(key: int) -> None:
+            cmd = {KEY_SPACE: "follow", KEY_ENTER: "record", KEY_KP_ENTER: "record", KEY_O: "open", KEY_C: "close"}.get(key)
+            if cmd:
+                cmds.put(cmd)
+
+        with mujoco.viewer.launch_passive(model, data, key_callback=on_key) as v:
+            panel = _make_panel(s, cmds, arm, play_speed_deg_s, max_speed_deg_s, embed_view=False)
+            if panel is None:
+                print("No Tk on this Python: keys only (in the 3D view): Enter = record, O = open, C = close. "
+                      "Teach is ON. Use `python -m so101_sim path` to save/replay from files.")
+                s.teaching = True
+                while v.is_running():
+                    t0 = time.monotonic()
+                    control_step(v)
+                    time.sleep(max(0.0, 1.0 / hz - (time.monotonic() - t0)))
+            else:
+                tk_loop(*panel, v)
+    finally:
+        if arm is not None:
+            try:
+                print("Going back to the start (rest) pose slowly...", flush=True)
+                arm.go_rest()
+            except Exception as e:  # noqa: BLE001  (still switch off below)
+                print(f"Could not go to rest: {e}")
+            print("At rest. The motors switch off now.")
+            arm.robot.disconnect()
+    return 0
+
+
+def _make_panel(s: TeachSession, cmds: queue.Queue, arm: RealArm | None, play_speed: float, max_speed: float,
+                embed_view: bool = True):
+    """The Teach pendant window (Tk). None if this Python has no Tk."""
+    try:
+        from .teach_ui import make_panel
+    except ImportError:
+        return None
+    return make_panel(s, cmds, arm, play_speed, max_speed, embed_view)
+
+
+def export_path(file: Path, speed_deg_s: float = 20.0) -> int:
+    """Print a saved path and write its CSV (and task file) next to it."""
+    path = TeachPath.load(file)
+    chain = SerialChain.from_urdf()
+    print(f"{path.name}: {path.n_waypoints} waypoints, {len(path.steps)} steps")
+    for ln in path.lines():
+        print("  " + ln)
+    stem = Path(file).name.removesuffix(".path.json").removesuffix(".json")
+    traj = to_trajectory(path, max_speed_deg_s=speed_deg_s)
+    csv = Path(file).with_name(f"{stem}.csv")
+    write_trajectory(csv, traj)
+    print(f"wrote {csv} ({traj.t[-1]:.1f} s at {speed_deg_s:.0f} deg/s)")
+    task = to_task(path, chain)
+    if task is not None:
+        tp = Path(file).with_name(f"{stem}.task.json")
+        tp.write_text(json.dumps(task, indent=2))
+        print(f"wrote {tp}")
+    else:
+        print("no task file: the path does not close and open the gripper")
+    print(f"Real arm:  python -m retarget replay {csv.resolve()} --port COM4 --max-speed-deg {speed_deg_s:.0f}   (run from product\\teach)")
+    return 0

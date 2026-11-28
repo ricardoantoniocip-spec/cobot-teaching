@@ -16,7 +16,8 @@ The arm model is the official one (TheRobotStudio/SO-ARM100, same commit as
 | Command | What it does |
 |---|---|
 | `python -m so101_sim check` | Twin vs retarget kinematics. Must say OK (under 0.1 mm). |
-| `python -m so101_sim view` | 3D viewer. Open the "Control" panel on the right and drag the sliders to move each joint. |
+| `python -m so101_sim view` | 3D viewer + **Teach panel**. Drag the sliders in the viewer's "Control" panel to jog, record waypoints, o / c gripper, save, replay. `--port COM4`: the real arm follows. See "Teach mode" below. |
+| `python -m so101_sim path paths/NAME.path.json` | Show a saved teach path and write its CSV and task file again |
 | `python -m so101_sim scripted-demo demo.csv` | A pick-and-place hand demo, same format as a video demo |
 | `python -m so101_sim replay traj.csv --video replay.mp4` | Plays a retarget trajectory in the twin, prints tracking, tool error and SUCCESS/FAIL |
 | `python -m so101_sim demos 50 --out sim_data` | 50 random part/place positions, keeps the successful runs as training episodes |
@@ -311,3 +312,41 @@ Together with `--object "name"` the marker also gives the object's own place on 
   `so101_sim/scripted.py` were tuned in the twin and will need a real-arm check.
 - The top camera is an ideal camera. For sim-to-real, mount your real camera at the same place
   (75 cm above the table, 22 cm in front of the base) or move `top` in `scene.py` to match yours.
+
+
+## Teach mode (like a teach pendant)
+
+```
+python -m so101_sim view                  # twin only
+python -m so101_sim view --port COM4      # real arm follows the twin (SPACE = follow / pause)
+```
+
+One window: the pendant with the 3D twin inside (drag = turn, right-drag = move, wheel = zoom, double-click = reset;
+green dots = taught waypoints, orange = gripper step there). `--viewer` also opens MuJoCo's own viewer.
+
+1. Press **TEACH** (turns green).
+2. Jog with the sliders or the − / + buttons in the **Jog** card (hold + to keep moving). **Record waypoint** (or `w` / Enter) stores the pose as a MoveJ.
+3. `o` opens, `c` closes the gripper; in Teach mode that is a step in the path.
+4. Type a name, **Save**. Files in `paths\`: `NAME.path.json` (the path), `NAME.csv` (joint trajectory for
+   `python -m retarget replay`), `NAME.task.json` (task file for the URScript / SO-101 generator, when the path picks and places).
+5. **Load...** a path, **Play in twin** (real arm holds still), **Run on robot** (asks first; real arm follows the twin,
+   capped at `--max-speed`, default 60 deg/s). **STOP** / Esc halts both.
+
+**Freedrive** (with `--port`): press **Freedrive** (or `f`) in the Teach panel, like the freedrive button on a UR.
+Hold the arm first: the arm motors switch off and it has no gravity hold. Move it by hand, the twin copies it,
+**Record waypoint** stores the pose, `o` / `c` still drive the gripper. Press Freedrive again: the arm holds where you left it.
+
+Closing the window: the real arm first moves slowly (20 deg/s) back to the pose it had when you started (put it in the
+folded rest pose before starting), then the motors switch off. A running program also waits for the real gripper to
+finish closing before it moves on.
+
+**Set box at gripper** (`b`): hold the gripper tip just above the real box (don't press on it) and press the button:
+the twin's box jumps to that x, y so the twin matches your bench. Saved with the program and restored on load.
+
+**Soft grip** (real arm): closing goes slowly and stops when the jaws meet the part (the jaw lags the command, or the
+motor load passes `--grip-load`, default 150 of 1000, measured on the real gripper 2026-11-28: empty close 84, sponge 180, box 200). It then squeezes a little past the contact point and holds.
+Find the right number first with the gripper-only test (from product\teach): `python -m retarget grip-test --port COM4`.
+The Jog card shows "part held at N %" and the load. Without a part it closes all the way. Same during Run on robot.
+
+Replay is MoveJ: all joints start and stop together, peak joint speed = the Speed box (default 40 deg/s). The gripper
+moves only while the arm stands still. Undo removes the last step. `--plain` gives the old viewer without the panel.

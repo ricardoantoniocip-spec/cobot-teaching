@@ -63,6 +63,11 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--port", required=True)
     s.add_argument("--robot-id", default="follower", help="the id used in lerobot-calibrate")
 
+    s = sub.add_parser("grip-test", help="gripper only: find the load that means a part is held (safe, slow)")
+    s.add_argument("--port", required=True)
+    s.add_argument("--robot-id", default="follower")
+    s.add_argument("--limit", type=float, default=400.0, help="safety stop: motor load (0-1000) where a close stops at once")
+
     a = p.parse_args(argv)
     chain = SerialChain.from_urdf()
 
@@ -129,6 +134,18 @@ def main(argv: list[str] | None = None) -> int:
             print("stopped by user")
         finally:
             # Note: LeRobot turns torque off on disconnect, so the arm goes limp. Support it.
+            robot.disconnect()
+    elif a.cmd == "grip-test":
+        from .grip_test import grip_test
+        from .robot import JointMapping, connect
+
+        robot = connect(a.port, a.robot_id)
+        try:
+            return grip_test(robot, JointMapping.load(), a.limit)
+        except KeyboardInterrupt:
+            print("stopped by user")
+            return 1
+        finally:
             robot.disconnect()
     elif a.cmd == "bringup":
         from .bringup import bringup
