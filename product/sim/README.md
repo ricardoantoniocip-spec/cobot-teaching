@@ -16,7 +16,8 @@ The arm model is the official one (TheRobotStudio/SO-ARM100, same commit as
 | Command | What it does |
 |---|---|
 | `python -m so101_sim check` | Twin vs retarget kinematics. Must say OK (under 0.1 mm). |
-| `python -m so101_sim view` | 3D viewer. Open the "Control" panel on the right and drag the sliders to move each joint. |
+| `python -m so101_sim view` | 3D viewer + **Teach panel**. Drag the sliders in the viewer's "Control" panel to jog, record waypoints, o / c gripper, save, replay. `--port COM4`: the real arm follows. See "Teach mode" below. |
+| `python -m so101_sim path paths/NAME.path.json` | Show a saved teach path and write its CSV and task file again |
 | `python -m so101_sim scripted-demo demo.csv` | A pick-and-place hand demo, same format as a video demo |
 | `python -m so101_sim replay traj.csv --video replay.mp4` | Plays a retarget trajectory in the twin, prints tracking, tool error and SUCCESS/FAIL |
 | `python -m so101_sim demos 50 --out sim_data` | 50 random part/place positions, keeps the successful runs as training episodes |
@@ -302,3 +303,22 @@ Together with `--object "name"` the marker also gives the object's own place on 
   `so101_sim/scripted.py` were tuned in the twin and will need a real-arm check.
 - The top camera is an ideal camera. For sim-to-real, mount your real camera at the same place
   (75 cm above the table, 22 cm in front of the base) or move `top` in `scene.py` to match yours.
+
+
+## Teach mode (like a teach pendant)
+
+```
+python -m so101_sim view                  # twin only
+python -m so101_sim view --port COM4      # real arm follows the twin (SPACE = follow / pause)
+```
+
+1. Press **TEACH** (turns green).
+2. Jog with the joint sliders in the 3D view's Control panel. **Record waypoint** (or `w` / Enter) stores the pose as a MoveJ.
+3. `o` opens, `c` closes the gripper; in Teach mode that is a step in the path.
+4. Type a name, **Save**. Files in `paths\`: `NAME.path.json` (the path), `NAME.csv` (joint trajectory for
+   `python -m retarget replay`), `NAME.task.json` (task file for the URScript / SO-101 generator, when the path picks and places).
+5. **Load...** a path, **Play in twin** (real arm holds still), **Run on robot** (asks first; real arm follows the twin,
+   capped at `--max-speed`, default 30 deg/s). **STOP** / Esc halts both.
+
+Replay is MoveJ: all joints start and stop together, peak joint speed = the Speed box (default 20 deg/s). The gripper
+moves only while the arm stands still. Undo removes the last step. `--plain` gives the old viewer without the panel.

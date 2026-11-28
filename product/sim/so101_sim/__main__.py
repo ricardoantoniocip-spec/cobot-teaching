@@ -2,7 +2,9 @@
 
   fetch                         download the official SO-101 MuJoCo model (once, ~16 MB)
   check                         compare the twin with retarget's kinematics (should be < 0.1 mm)
-  view                          open the 3D viewer; drag the actuator sliders to move the arm (--port COM4: the real arm follows)
+  view                          3D viewer + Teach panel: jog with the sliders, record waypoints, o/c gripper, save, replay
+                                (--port COM4: the real arm follows; --plain: viewer only)
+  path NAME.path.json           show a saved teach path and write its trajectory CSV / task file again
   scripted-demo OUT.csv         write a scripted hand demo for the default part (input for `retarget convert`)
   replay TRAJ.csv               play a retarget trajectory in the twin and check the task result
   demos N                       make N varied pick-and-place demos, keep the successful ones as episodes
@@ -31,6 +33,14 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--port", help="serial port of the real SO-101, e.g. COM4: the real arm follows the twin (SPACE = follow / pause)")
     s.add_argument("--robot-id", default="follower", help="the id used when the arm was calibrated in LeRobot")
     s.add_argument("--max-speed", type=float, default=30.0, help="fastest joint speed of the real arm in deg/s")
+    s.add_argument("--path", type=Path, help="start with this saved teach path loaded (NAME.path.json)")
+    s.add_argument("--paths-dir", type=Path, default=Path("paths"), help="where Save and Load look (default: paths)")
+    s.add_argument("--speed", type=float, default=20.0, help="replay speed in deg/s (peak joint speed), changeable in the panel")
+    s.add_argument("--plain", action="store_true", help="only the 3D viewer, no Teach panel (twin only)")
+
+    s = sub.add_parser("path")
+    s.add_argument("file", type=Path, help="a saved NAME.path.json")
+    s.add_argument("--speed", type=float, default=20.0, help="peak joint speed in deg/s for the CSV")
 
     s = sub.add_parser("scripted-demo")
     s.add_argument("out", type=Path)
@@ -109,11 +119,17 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "check":
         return check()
 
-    if a.cmd == "view":
-        if a.port:
-            from .mirror import run
+    if a.cmd == "view" and not a.plain:
+        from .teach_panel import run
 
-            return run(a.port, a.robot_id, a.max_speed)
+        return run(a.port, a.robot_id, a.max_speed, a.path, a.paths_dir, a.speed)
+
+    if a.cmd == "path":
+        from .teach_panel import export_path
+
+        return export_path(a.file, a.speed)
+
+    if a.cmd == "view":
         import mujoco.viewer
 
         from . import scene

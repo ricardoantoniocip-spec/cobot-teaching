@@ -5,7 +5,7 @@
 The twin starts in the real arm's pose. The real arm starts PAUSED (it holds still).
 Open the "Control" panel on the right of the viewer and drag the joint sliders: the twin moves.
 Press SPACE (with the viewer window focused) to let the real arm follow, SPACE again to stop it.
-Joints are capped at --max-speed (default 30 deg/s). Close the window to quit: the motors then
+Joints are capped at --max-speed (default 30 deg/s). The Teach panel (teach_panel.py) opens with it. Close the window to quit: the motors then
 switch off and the arm goes limp, so keep a hand near it.
 """
 
@@ -32,41 +32,7 @@ def step_towards(q_cmd: np.ndarray, q_goal: np.ndarray, max_step: float) -> np.n
 
 
 def run(port: str, robot_id: str = "follower", max_speed_deg_s: float = 30.0, hz: float = 30.0) -> int:
-    import mujoco
-    import mujoco.viewer
-    from retarget import robot as rr
+    """Kept for old scripts: the view with the Teach panel does the mirroring now."""
+    from .teach_panel import run as run_teach
 
-    model, data = scene.load()
-    robot = rr.connect(port, robot_id)
-    mapping = rr.JointMapping.load()
-    q_cmd = rr.current_joints(robot, mapping)
-    g_cmd = 1.0
-    scene.set_pose(model, data, q_cmd, g_cmd)  # twin starts where the real arm is
-
-    state = {"follow": False}
-
-    def on_key(key: int) -> None:
-        if key == SPACE:
-            state["follow"] = not state["follow"]
-            print("real arm FOLLOWS the twin" if state["follow"] else "real arm PAUSED (holds still)", flush=True)
-
-    print(f"SO-101 on {port}: connected. PAUSED. Drag the sliders in the viewer's Control panel; SPACE = follow / pause.")
-    max_step = np.radians(max_speed_deg_s) / hz
-    physics_steps = max(1, round((1.0 / hz) / model.opt.timestep))
-    try:
-        with mujoco.viewer.launch_passive(model, data, key_callback=on_key) as viewer:
-            while viewer.is_running():
-                t0 = time.monotonic()
-                for _ in range(physics_steps):
-                    mujoco.mj_step(model, data)
-                if state["follow"]:
-                    q_twin, g_twin = twin_joints(data)
-                    q_cmd = step_towards(q_cmd, q_twin, max_step)
-                    g_cmd = float(np.clip(g_twin, g_cmd - 0.05, g_cmd + 0.05))
-                robot.send_action(mapping.to_action(q_cmd, g_cmd))  # paused: keep holding the last pose
-                viewer.sync()
-                time.sleep(max(0.0, 1.0 / hz - (time.monotonic() - t0)))
-    finally:
-        print("Closing: the motors switch off now, the arm goes limp.")
-        robot.disconnect()
-    return 0
+    return run_teach(port, robot_id, max_speed_deg_s, hz=hz)
