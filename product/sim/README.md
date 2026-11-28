@@ -99,9 +99,10 @@ python -m so101_sim live --video take.mp4 --no-window --save out.mp4 --log out.c
 How to start: sit as you will work, **rest your working hand on the table and hold still for
 2 seconds** (yellow bar). That sets your body directions, your arm length and the table height.
 Then move. Open hand = gripper open, closed hand = gripper closed, anything in between too.
-Your wrist steers the gripper: tip your fingers down or up and the gripper tilts the same way
-(wrist_flex); turn your palm like a key and it rolls (wrist_roll). Zero is your hand as it rested
-during calibration. `--no-wrist` switches this off; `--roll-gain -1` or `--flex-gain -1` if one
+Your wrist steers the gripper: tip your fingers down or up and wrist_flex turns by the same angle;
+turn your palm like a key and wrist_roll turns the same way. Zero is your hand as it rested during
+calibration, and that resting place becomes the middle of the robot's working area (20 cm in front
+of its base), so the robot has room to move in every direction. `--no-wrist` switches this off; `--roll-gain -1` or `--flex-gain -1` if one
 turns the wrong way on your setup.
 
 Framing a laptop camera: sit 1 to 1.5 m back, screen tilted so both shoulders and your hand on the

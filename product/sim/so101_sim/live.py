@@ -268,7 +268,7 @@ def draw_panel(st: LiveState, seen: Seen, lines_extra: list[str], width: int, he
         _sure_line(f, arm),
         ("wrist  -" if st.wrist_flex_deg is None else f"wrist  tilt {st.wrist_flex_deg:+.0f}  roll {st.wrist_roll_deg:+.0f} deg") + ("" if wrist_on else "  (not used: --no-wrist)"),
         "joints  " + "  ".join(f"{v:.0f}" for v in np.degrees(st.q)) + " deg",
-        f"IK miss {st.ik_error_mm:.0f} mm   behind {st.lag_deg:.0f} deg" + ("   AT EDGE OF REACH" if st.limited else ""),
+        f"IK miss {st.ik_error_mm:.0f} mm   behind {st.lag_deg:.0f} deg" + ("   AT EDGE OF REACH" if st.limited else "") + ("   WRIST AT END STOP" if st.wrist_at_limit else ""),
         *lines_extra,
     ]
     for i, text in enumerate(lines):

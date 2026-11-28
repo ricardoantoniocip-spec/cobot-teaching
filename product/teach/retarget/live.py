@@ -12,10 +12,14 @@ From those seconds the follower takes your body directions (forward, left, up), 
 each picture gives a tool point for the robot, a gripper opening from how open your hand is,
 a gripper tilt and roll from your wrist, and joint angles by IK.
 
+Where the robot works: your hand's resting place during calibration becomes the middle of the
+robot's working area (rest_xy_m), so it has room to move every way, also towards and away from you.
+
 Wrist: the hand's pose during calibration (resting on the table) is "zero". Tip your fingers down or
-up from there and the gripper tilts the same way (wrist_flex); turn your palm like a key and the
-gripper rolls the same way (wrist_roll). Position still comes first: near the edge of the reach the
-arm may not manage the full tilt. The joints never move faster than a set speed, so a tracking jump
+up from there and the robot's wrist_flex turns by the same angle; turn your palm like a key and
+wrist_roll turns the same way. These go straight onto the two wrist joints, after IK has placed the
+tool point, so the wrist can never pull the arm into a bad pose (first real test, 28 Nov: asking IK
+for the tilt jammed wrist_flex at its limit and the tool point missed by 30-90 mm). The joints never move faster than a set speed, so a tracking jump
 becomes a slow move, not a jerk.
 
 Positions are NOT true millimetres (one camera, scaled arm). No detector is needed to run or
@@ -73,9 +77,10 @@ class LiveConfig:
     wrist: bool = True  # your wrist tilts and rolls the gripper (False: tilt from height only, roll fixed)
     flex_gain: float = 1.0  # gripper tilt per degree of hand tilt
     roll_gain: float = 1.0  # gripper roll per degree of palm turn (-1 if it turns the wrong way)
-    flex_back_max_deg: float = 30.0  # how far past straight down the gripper may tilt back towards the base
     roll_max_deg: float = 150.0
-    orientation_weight: float = 0.05  # IK: position always wins, this decides how hard it tries for the tilt and roll
+    flex_max_deg: float = 60.0  # largest wrist_flex change your wrist can ask for, either way
+    rest_xy_m: tuple[float, float] = (0.20, 0.0)  # where your calibration hand lands: the middle of the working area
+    orientation_weight: float = 0.02  # IK: position always wins over the gripper direction
     q_start: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.3, 1.0, 0.0]))
 
 
@@ -95,6 +100,7 @@ class LiveState:
     elbow_deg: float | None = None
     wrist_flex_deg: float | None = None  # your hand's tilt since calibration (+ = fingers further down)
     wrist_roll_deg: float | None = None  # your palm's turn since calibration
+    wrist_at_limit: bool = False  # a wrist joint is at its end stop
     calib_progress: float = 0.0
     scale: float = 0.0  # robot metres per human metre
 
@@ -107,19 +113,31 @@ class LiveFollower:
         self.grip = 1.0
         self.shoulder_robot = chain._fk_frames(np.zeros(len(chain.active)))[2][1]  # position of the shoulder_lift joint
         self._r_down = tool_down(chain, 0.0)
+        self._q_ik = self.q.copy()  # last IK answer without the wrist added: the warm start for the next one
+        self._wrist_sign = self._wrist_signs()
         self.recalibrate()
 
-    def tool_rotation(self, pos: np.ndarray, flex: float = 0.0, roll: float = 0.0) -> np.ndarray:
-        """Gripper direction for a tool point: down near the table, tilting forward higher up, facing away from the base.
+    def _wrist_signs(self) -> np.ndarray:
+        """Which way wrist_flex and wrist_roll must turn so the gripper copies the hand, read from the URDF.
 
-        flex (rad, + = further down / back towards the base) and roll (rad, about the fingers) come from your wrist.
+        flex: + = fingers further down / back towards the base. roll: right-hand rule about the fingers.
         """
+        q = np.array([0.0, 0.3, 0.3, 1.0, 0.0])
+        tool, axes, _ = self.chain._fk_frames(q)
+        fingers = tool[:3, 2]
+        q2 = q.copy()
+        q2[3] += 0.1
+        back = -tool[:3, 3] / (np.linalg.norm(tool[:3, 3]) + 1e-12)  # from the tool towards the base
+        flex = np.sign((self.chain.fk(q2)[:3, 2] - fingers) @ back) or 1.0
+        roll = np.sign(axes[4] @ fingers) or 1.0
+        return np.array([flex, roll])
+
+    def tool_rotation(self, pos: np.ndarray) -> np.ndarray:
+        """Gripper direction for a tool point: down near the table, tilting forward higher up, facing away from the base."""
         cfg = self.cfg
         tilt = -np.radians(cfg.tilt_max_deg) * np.clip((pos[2] - cfg.tilt_from_z_m) / (cfg.tilt_full_z_m - cfg.tilt_from_z_m), 0.0, 1.0)
-        tilt = float(np.clip(tilt + flex, -np.radians(cfg.tilt_max_deg), np.radians(cfg.flex_back_max_deg)))
         yaw = np.arctan2(pos[1], pos[0])
-        r = axis_angle_to_matrix(np.array([0.0, 0.0, 1.0]), yaw) @ axis_angle_to_matrix(np.array([0.0, 1.0, 0.0]), tilt) @ self._r_down
-        return r @ axis_angle_to_matrix(np.array([0.0, 0.0, 1.0]), roll)  # tool z = along the fingers
+        return axis_angle_to_matrix(np.array([0.0, 0.0, 1.0]), yaw) @ axis_angle_to_matrix(np.array([0.0, 1.0, 0.0]), tilt) @ self._r_down
 
     def recalibrate(self) -> None:
         self.mode = WAITING
@@ -130,6 +148,7 @@ class LiveFollower:
         self.axes = self.shoulder = self.hand_ref = None
         self._wrist = np.zeros(2)  # smoothed (pitch, roll), rad
         self.scale = self.z_table = 0.0
+        self.b_rest = None
 
     # ------------------------------------------------------------ calibration
 
@@ -142,7 +161,9 @@ class LiveFollower:
         fore = np.median([np.linalg.norm(f.pose_world[j["wrist"]] - f.pose_world[j["elbow"]]) for f in frames])
         hand = np.median([np.linalg.norm(grasp_point(f.hand_world) - f.hand_world[H_WRIST]) for f in frames])
         self.scale = self.cfg.robot_reach_m / (upper + fore + hand)
-        self.z_table = float(np.median([self._grasp_body(f)[2] for f in frames]))
+        rest = np.median([self._grasp_body(f) for f in frames], axis=0)
+        self.z_table = float(rest[2])
+        self.b_rest = rest
         self.hand_ref = frames[len(frames) // 2].hand_world.copy()  # wrist "zero": the hand resting on the table
         self._wrist = np.zeros(2)
         self._calib = []
@@ -201,8 +222,7 @@ class LiveFollower:
             return st
         self._t_seen = f.t
         b = self._grasp_body(f)
-        pos = self.shoulder_robot + self.scale * b
-        pos[2] = self.scale * (b[2] - self.z_table) + cfg.table_z_m
+        pos = np.array([*cfg.rest_xy_m, cfg.table_z_m]) + self.scale * (b - self.b_rest)
         target, st.limited = self._into_working_area(pos)
         if self._pos is None:
             self._pos = target
@@ -212,20 +232,32 @@ class LiveFollower:
         st.target = self._pos.copy()
 
         flex = roll = 0.0
-        if self.hand_ref is not None:
+        if self.hand_ref is not None:  # your wrist, relative to the calibration hand
             pitch_roll = np.array(wrist_angles(f.hand_world, self.hand_ref, self.axes))
             a = 1.0 if cfg.smooth_s <= 0 or dt <= 0 else 1.0 - np.exp(-dt / cfg.smooth_s)
             self._wrist = self._wrist + a * (pitch_roll - self._wrist)
             st.wrist_flex_deg, st.wrist_roll_deg = (float(v) for v in np.degrees(self._wrist))
             if cfg.wrist:
-                flex = cfg.flex_gain * self._wrist[0]
+                flex = float(np.clip(cfg.flex_gain * self._wrist[0], -np.radians(cfg.flex_max_deg), np.radians(cfg.flex_max_deg)))
                 roll = float(np.clip(cfg.roll_gain * self._wrist[1], -np.radians(cfg.roll_max_deg), np.radians(cfg.roll_max_deg)))
-        goal = make_transform(self.tool_rotation(self._pos, flex, roll), self._pos)
-        # position wins over gripper direction
-        res = solve_ik(self.chain, goal, self.q, orientation_weight=cfg.orientation_weight, iterations=cfg.ik_iterations)
+        # 1. IK puts the tool point where your hand is (gripper down near the table, tilting forward higher up)
+        goal = make_transform(self.tool_rotation(self._pos), self._pos)
+        res = solve_ik(self.chain, goal, self._q_ik, orientation_weight=cfg.orientation_weight, iterations=cfg.ik_iterations)
+        if res.position_error_m > 0.01:  # stuck in a bad pose: start again from the home pose
+            retry = solve_ik(self.chain, goal, cfg.q_start, orientation_weight=cfg.orientation_weight, iterations=4 * cfg.ik_iterations)
+            if retry.position_error_m < res.position_error_m:
+                res = retry
+        self._q_ik = res.q.copy()
         st.ik_error_mm = res.position_error_m * 1000
+        # 2. your wrist turns the two wrist joints by the same angles
+        q_cmd = res.q.copy()
+        q_cmd[3] += self._wrist_sign[0] * flex
+        q_cmd[4] += self._wrist_sign[1] * roll
+        clipped = self.chain.clip(q_cmd)
+        st.wrist_at_limit = bool(np.any(np.abs(clipped[3:] - q_cmd[3:]) > 1e-6))
+        q_cmd = clipped
         step = np.radians(cfg.max_joint_speed_deg_s) * dt
-        dq = res.q - self.q
+        dq = q_cmd - self.q
         st.lag_deg = float(np.degrees(np.abs(dq).max()))
         if advance:
             self.q = self.q + np.clip(dq, -step, step)
@@ -234,7 +266,7 @@ class LiveFollower:
         if advance:
             self.grip += (want - self.grip) * (1.0 if dt <= 0 else min(1.0, dt / 0.08))
         st.q, st.gripper_open, st.mode = self.q, self.grip, FOLLOWING
-        st.message = "Following" + (" (at the edge of the robot's reach)" if st.limited else "")
+        st.message = "Following" + (" (at the edge of the robot's reach)" if st.limited else "") + (" (wrist at its end stop)" if st.wrist_at_limit else "")
         return st
 
     def _into_working_area(self, pos: np.ndarray) -> tuple[np.ndarray, bool]:

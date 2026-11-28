@@ -44,9 +44,9 @@ def test_calibrates_then_follows_the_hand():
     assert len(following) > 200
     # the hand rested on the table during calibration, so the lowest target is the table height
     assert abs(min(s.target[2] for s in following) - fol.cfg.table_z_m) < 0.003
-    # the pick is to the operator's left, the place to the right: the robot's y changes sign
+    # the pick is to the operator's left, the place to the right: the robot moves sideways the same way
     ys = [s.target[1] for s in following]
-    assert max(ys) > 0.03 and min(ys) < -0.03
+    assert max(ys) - min(ys) > 0.08 and abs(following[0].target[1] - fol.cfg.rest_xy_m[1]) < 0.01
     # once it has caught up, IK reaches the target and the speed limit is not holding it back
     late = following[60:]
     assert np.median([s.ik_error_mm for s in late]) < 5
@@ -124,19 +124,19 @@ def test_wrist_angles_measure_tilt_and_roll():
 
 
 def wrist_run(turn, **cfg):
-    """Calibrate, then hold the hand still above the pick and turn the wrist from second 1 on."""
+    """Calibrate, then hold the hand still above the pick (2 s, the robot catches up) and turn the wrist after that."""
     frames, n_still = operator_frames()
     hold = copy.deepcopy(frames[n_still + 15])  # hand on the way to the pick, open, above the table
     axes = body_axes(frames[:n_still])
     out = frames[:n_still]
-    for i in range(int(3 * HZ)):
+    for i in range(int(4 * HZ)):
         g = copy.deepcopy(hold)
         g.t = (n_still + i) / HZ
-        if i >= HZ:
+        if i >= 2 * HZ:
             turn(g, axes)
         out.append(g)
     fol, states = run(out, **cfg)
-    return states[n_still + int(HZ) - 1], states[-1], fol
+    return states[n_still + int(2 * HZ) - 1], states[-1], fol
 
 
 def test_hand_roll_drives_wrist_roll():
@@ -149,8 +149,8 @@ def test_hand_roll_drives_wrist_roll():
     assert abs(after.wrist_roll_deg - 45) < 2
     d = np.degrees(after.q - before.q)
     assert abs(abs(d[4]) - 45) < 5  # wrist_roll turns about as much as the palm
-    assert np.all(np.abs(d[:3]) < 6)  # the rest only corrects a little (the tool point is a bit off the roll axis)
-    assert np.linalg.norm(fol.chain.fk(after.q)[:3, 3] - after.target) < 0.005
+    assert abs(d[3]) < 1  # wrist_flex stays (the arm joints follow the grasp point, which moves a little as the hand turns)
+    assert after.ik_error_mm < 5
     # same sense of turning: the gripper turns about its fingers the way the palm turned about the hand's forward axis
     r_rel = fol.chain.fk(before.q)[:3, :3].T @ fol.chain.fk(after.q)[:3, :3]
     assert np.degrees(np.arctan2(r_rel[1, 0], r_rel[0, 0])) > 35
@@ -173,9 +173,22 @@ def test_hand_tilt_drives_gripper_tilt():
         z = fol.chain.fk(q)[:3, 2]  # along the fingers
         return np.degrees(np.arcsin(-z[2]))
 
-    assert finger_down_deg(before.q) - finger_down_deg(after.q) > 20  # the gripper tipped up with the hand
-    assert abs(np.degrees(after.q[3] - before.q[3])) > 10  # mostly through wrist_flex
-    assert np.linalg.norm(fol.chain.fk(after.q)[:3, 3] - after.target) < 0.005  # the tool point stays put
+    assert finger_down_deg(before.q) - finger_down_deg(after.q) > 25  # the gripper tipped up with the hand
+    d = np.degrees(after.q - before.q)
+    assert abs(abs(d[3]) - 30) < 3  # wrist_flex turns by the same angle (arm joints only follow the moved grasp point)
+    assert after.ik_error_mm < 5 and not after.wrist_at_limit
+
+
+def test_ik_never_jams_against_the_wrist():
+    """28 Nov real test: the hand tilted 40-70 deg and IK, asked for that tilt, jammed wrist_flex at 95 deg with 5 cm misses."""
+    def turn(g, axes):
+        h = g.hand_world
+        fwd = axes.T @ (h[9] - h[0])
+        side = np.cross([0, 0, 1.0], fwd / np.linalg.norm(fwd))
+        rotate_hand(g, side / np.linalg.norm(side), np.radians(70), axes)  # fingers 70 deg further down
+
+    _, after, _ = wrist_run(turn)
+    assert after.ik_error_mm < 5
 
 
 def test_follows_with_an_unsure_shoulder_after_calibration():
