@@ -2,7 +2,7 @@
 
   fetch                         download the official SO-101 MuJoCo model (once, ~16 MB)
   check                         compare the twin with retarget's kinematics (should be < 0.1 mm)
-  view                          open the 3D viewer; drag the actuator sliders to move the arm
+  view                          open the 3D viewer; drag the actuator sliders to move the arm (--port COM4: the real arm follows)
   scripted-demo OUT.csv         write a scripted hand demo for the default part (input for `retarget convert`)
   replay TRAJ.csv               play a retarget trajectory in the twin and check the task result
   demos N                       make N varied pick-and-place demos, keep the successful ones as episodes
@@ -27,7 +27,10 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("fetch")
     sub.add_parser("check")
-    sub.add_parser("view")
+    s = sub.add_parser("view")
+    s.add_argument("--port", help="serial port of the real SO-101, e.g. COM4: the real arm follows the twin (SPACE = follow / pause)")
+    s.add_argument("--robot-id", default="follower", help="the id used when the arm was calibrated in LeRobot")
+    s.add_argument("--max-speed", type=float, default=30.0, help="fastest joint speed of the real arm in deg/s")
 
     s = sub.add_parser("scripted-demo")
     s.add_argument("out", type=Path)
@@ -70,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--port", help="serial port of the real SO-101, e.g. COM5. Without it only the twin moves")
     s.add_argument("--robot-id", default="follower", help="the id used when the arm was calibrated in LeRobot")
     s.add_argument("--max-speed", type=float, help="fastest joint speed in deg/s (default 90 in the twin, 45 on the real arm)")
+    s.add_argument("--min-height", type=float, help="lowest tool point in mm (default 8 in the twin, 40 on the real arm)")
     s.add_argument("--mirror", action=argparse.BooleanOptionalAction, help="show the picture like a mirror (default: yes for a webcam)")
     s.add_argument("--no-window", action="store_true", help="no window (for tests)")
     s.add_argument("--no-twin", action="store_true", help="do not run the twin")
@@ -102,6 +106,10 @@ def main(argv: list[str] | None = None) -> int:
         return check()
 
     if a.cmd == "view":
+        if a.port:
+            from .mirror import run
+
+            return run(a.port, a.robot_id, a.max_speed)
         import mujoco.viewer
 
         from . import scene
@@ -146,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         from .live import print_summary, run_live
 
         print_summary(run_live(a.video if a.video else a.camera, a.arm, a.objects, a.port, a.robot_id, a.max_speed, a.mirror, not a.no_window,
-                               not a.no_twin, a.save, a.log, a.seconds, a.device))
+                               not a.no_twin, a.save, a.log, a.seconds, a.device, min_height_mm=a.min_height))
         return 0
 
     if a.cmd == "to-lerobot":

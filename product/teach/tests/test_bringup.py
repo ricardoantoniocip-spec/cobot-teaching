@@ -36,10 +36,10 @@ def run(robot, answers, monkeypatch, tmp_path, mapping=None):
 
 def test_good_arm_passes_and_ends_at_the_first_pose(monkeypatch, tmp_path):
     robot = FakeRobot()
-    code, mapping, text = run(robot, ["yes", *"yyyyy", "", "", "", "yes"], monkeypatch, tmp_path)
+    code, mapping, text = run(robot, ["yes", *"yyyyy", "", "", "", "yes", ""], monkeypatch, tmp_path)
     assert code == 0 and all(s == 1.0 for s in mapping.signs.values())
     assert (tmp_path / "so101_mapping.json").exists()
-    assert "180 mm in front" in text and "60 mm above" in text
+    assert "180 mm in front" in text and "80 mm above" in text
     assert min(robot.grips) == mapping.gripper_closed_pct and max(robot.grips) == mapping.gripper_open_pct
 
 
