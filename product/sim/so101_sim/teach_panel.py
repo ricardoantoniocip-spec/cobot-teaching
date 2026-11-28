@@ -228,8 +228,10 @@ class RealArm:
         self.grip_load, self.grip_lag, self.grip_squeeze = grip_load, grip_lag, grip_squeeze
         self.close_step = 1.0 / (close_s * hz)
         self.gripped_at: float | None = None  # jaw opening (0..1) where the part was felt
-        self._lag_ticks = 0
+        self._jaw_hist: list[float] = []
+        self._g_des = 1.0
         self.last_load = 0.0
+        self.rest_q = self.q_cmd.copy()  # the pose at start (normally the folded rest pose): Close goes back here slowly
 
     def joints(self) -> np.ndarray:
         return self.mapping.from_observation(self.robot.get_observation())
@@ -247,24 +249,49 @@ class RealArm:
         return g, load
 
     def _gripper(self, s: TeachSession) -> float:
-        g_des = s.target()[1]
+        g_des = self._g_des = s.target()[1]
         if g_des >= self.g_cmd - 1e-3:  # opening or holding still
             if g_des > (self.gripped_at if self.gripped_at is not None else 2.0) + 0.05:
                 self.gripped_at = None  # opened again: next close looks for a part again
             if self.gripped_at is None:
                 self.g_cmd = float(np.clip(g_des, self.g_cmd - 0.05, self.g_cmd + 0.05))
+            self._jaw_hist = []
             return self.g_cmd
         if self.gripped_at is not None:  # part already held: keep the squeeze, close no further
             return self.g_cmd
         self.g_cmd = max(g_des, self.g_cmd - self.close_step)
         jaw, self.last_load = self._jaw()
-        self._lag_ticks = self._lag_ticks + 1 if jaw - self.g_cmd > self.grip_lag else 0
-        if self.last_load > self.grip_load or self._lag_ticks >= 3:
+        self._jaw_hist = (self._jaw_hist + [jaw])[-4:]
+        # A part is felt only when the jaw has STOPPED (moved < 1 % of its stroke over the last 3 readings) while the
+        # command is past it. A jaw that is just slower than the command, or the load spike of a fast start, is not a part
+        # (2026-11-28: with the faster close the old check fired in mid-air and the gripper stopped half way).
+        stalled = len(self._jaw_hist) == 4 and max(self._jaw_hist) - min(self._jaw_hist) < 0.01
+        if stalled and (jaw - self.g_cmd > self.grip_lag or self.last_load > self.grip_load):
             self.gripped_at = max(0.0, jaw)
             self.g_cmd = max(0.0, jaw - self.grip_squeeze)  # a little past the contact point = steady grip force
-            self._lag_ticks = 0
+            self._jaw_hist = []
             s.message = f"Part gripped at {self.gripped_at * 100:.0f} % open (load {self.last_load:.0f}). Holding."
         return self.g_cmd
+
+    @property
+    def gripper_busy(self) -> bool:
+        """Still closing toward the twin's gripper (no part felt yet): a running program waits for it."""
+        return self.gripped_at is None and self.g_cmd > self._g_des + 1e-3
+
+    def go_rest(self, speed_deg_s: float = 20.0, hz: float = 30.0) -> None:
+        """Slowly back to the start pose (motors on), so the arm is not dropped mid-air when they switch off."""
+        if self.freedrive:
+            self.set_freedrive(False)
+        q = self.joints()
+        dq = float(np.degrees(np.abs(self.rest_q - q).max()))
+        steps = max(1, int(np.ceil(max(dq / speed_deg_s, 1.0) * hz)))
+        for k in range(1, steps + 1):
+            a = k / steps
+            a = a * a * (3 - 2 * a)  # gentle start and stop
+            self.q_cmd = q + (self.rest_q - q) * a
+            self.robot.send_action(self.mapping.to_action(self.q_cmd, self.g_cmd))
+            time.sleep(1.0 / hz)
+        time.sleep(0.5)
 
     def set_freedrive(self, on: bool) -> str:
         arm = list(scene.ARM_JOINTS)
@@ -405,7 +432,8 @@ def run(port: str | None = None, robot_id: str = "follower", max_speed_deg_s: fl
             if c[0] not in ("jog", "speed"):
                 print(s.message, flush=True)
         with lock():
-            s.tick()
+            if not (arm is not None and arm.follow and s.playing and arm.gripper_busy):
+                s.tick()  # a program on the real arm waits here until the gripper has closed or felt the part
             if arm is not None:
                 arm.step(s)
             for _ in range(physics_steps):
@@ -456,7 +484,12 @@ def run(port: str | None = None, robot_id: str = "follower", max_speed_deg_s: fl
                 tk_loop(*panel, v)
     finally:
         if arm is not None:
-            print("Closing: the motors switch off now, the arm goes limp.")
+            try:
+                print("Going back to the start (rest) pose slowly...", flush=True)
+                arm.go_rest()
+            except Exception as e:  # noqa: BLE001  (still switch off below)
+                print(f"Could not go to rest: {e}")
+            print("At rest. The motors switch off now.")
             arm.robot.disconnect()
     return 0
 

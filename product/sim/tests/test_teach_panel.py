@@ -132,9 +132,15 @@ class FakeRobot:
         self.sent = []
         self.part_pct = None  # a part between the jaws stops the gripper here
 
+        self.jaw_step = None  # a slow jaw: most it moves per command (gripper %)
+
     def _set(self, k, v):
-        if k == "gripper.pos" and self.part_pct is not None:
-            v = max(v, self.part_pct)
+        if k == "gripper.pos":
+            if self.jaw_step is not None:
+                cur = self.pos[k]
+                v = cur + max(-self.jaw_step, min(self.jaw_step, v - cur))
+            if self.part_pct is not None:
+                v = max(v, self.part_pct)
         self.pos[k] = v
 
     def get_observation(self):
@@ -258,9 +264,55 @@ def test_soft_grip_by_motor_load(tmp_path):
     handle_command(s, arm, "close")
     for _ in range(10):
         arm.step(s)
-    robot.bus.load = 500  # soft part: no lag yet, but the motor works hard
+    robot.bus.load = 500  # load spike while the jaw still moves: not a part
     arm.step(s)
+    assert arm.gripped_at is None
+    robot.part_pct = robot.pos["gripper.pos"]  # soft part: jaw stops right at the command, motor works hard
+    for _ in range(5):
+        arm.step(s)
     assert arm.gripped_at is not None
+
+
+def test_slow_jaw_is_not_a_part(tmp_path):
+    from retarget.robot import JointMapping
+    from so101_sim.teach_panel import RealArm, handle_command
+
+    s = session(tmp_path)
+    robot = FakeRobot(np.degrees(HOME))
+    robot.jaw_step = 0.6  # % per tick, slower than the 0.8 s close command
+    arm = RealArm(robot, JointMapping(), np.radians(30) / 30)
+    arm.step(s)
+    handle_command(s, arm, "close")
+    for _ in range(120):
+        arm.step(s)
+    assert arm.gripped_at is None and robot.pos["gripper.pos"] == pytest.approx(5.0)
+
+
+def test_program_waits_for_gripper_and_close_goes_to_rest(tmp_path, monkeypatch):
+    from retarget.robot import JointMapping
+    from so101_sim import teach_panel as tp
+
+    monkeypatch.setattr(tp.time, "sleep", lambda s: None)
+    s = session(tmp_path)
+    robot = FakeRobot(np.degrees(HOME))
+    arm = tp.RealArm(robot, JointMapping(), np.radians(30) / 30)
+    arm.g_cmd = 1.0
+    s.set_target(HOME, 0.0)  # twin says closed, real gripper still open
+    arm.follow = True
+    s.traj = object()  # pretend a program is running
+    arm._gripper(s)
+    assert arm.gripper_busy
+    for _ in range(60):
+        arm._gripper(s)
+    assert not arm.gripper_busy
+    s.traj = None
+
+    robot.pos.update({f"{j}.pos": float(v) for j, v in zip(scene.ARM_JOINTS, np.degrees(PICK))})
+    arm.go_rest()
+    for j, v in zip(scene.ARM_JOINTS, np.degrees(HOME)):
+        assert robot.pos[f"{j}.pos"] == pytest.approx(v)
+    steps = [a["shoulder_pan.pos"] for a in robot.sent]
+    assert max(abs(b - a) for a, b in zip(steps, steps[1:])) < 1.5  # small steps = slow
 
 
 def test_jog(tmp_path):

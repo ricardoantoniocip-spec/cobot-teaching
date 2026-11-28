@@ -327,6 +327,10 @@ green dots = taught waypoints, orange = gripper step there). `--viewer` also ope
 Hold the arm first: the arm motors switch off and it has no gravity hold. Move it by hand, the twin copies it,
 **Record waypoint** stores the pose, `o` / `c` still drive the gripper. Press Freedrive again: the arm holds where you left it.
 
+Closing the window: the real arm first moves slowly (20 deg/s) back to the pose it had when you started (put it in the
+folded rest pose before starting), then the motors switch off. A running program also waits for the real gripper to
+finish closing before it moves on.
+
 **Set box at gripper** (`b`): hold the gripper tip just above the real box (don't press on it) and press the button:
 the twin's box jumps to that x, y so the twin matches your bench. Saved with the program and restored on load.
 
