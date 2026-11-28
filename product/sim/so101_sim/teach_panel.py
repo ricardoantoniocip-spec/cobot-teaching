@@ -217,8 +217,8 @@ class RealArm:
                Leaving freedrive: the arm holds where you left it.
     """
 
-    def __init__(self, robot, mapping, max_step_rad: float, hz: float = 30.0, grip_load: float = 350.0,
-                 grip_lag: float = 0.08, grip_squeeze: float = 0.04, close_s: float = 1.5):
+    def __init__(self, robot, mapping, max_step_rad: float, hz: float = 30.0, grip_load: float = 150.0,
+                 grip_lag: float = 0.08, grip_squeeze: float = 0.04, close_s: float = 0.8):
         self.robot, self.mapping, self.max_step = robot, mapping, max_step_rad
         self.q_cmd = self.joints()
         self.g_cmd = 1.0
@@ -374,7 +374,7 @@ def handle_command(s: TeachSession, arm: RealArm | None, cmd: str, arg=None, pla
 
 def run(port: str | None = None, robot_id: str = "follower", max_speed_deg_s: float = 30.0, path_file: Path | None = None,
         paths_dir: Path = Path("paths"), play_speed_deg_s: float = 20.0, hz: float = 30.0, viewer: bool = False,
-        grip_load: float = 350.0) -> int:
+        grip_load: float = 150.0) -> int:
     import contextlib
 
     import mujoco

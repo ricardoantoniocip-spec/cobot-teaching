@@ -321,7 +321,7 @@ green dots = taught waypoints, orange = gripper step there). `--viewer` also ope
 4. Type a name, **Save**. Files in `paths\`: `NAME.path.json` (the path), `NAME.csv` (joint trajectory for
    `python -m retarget replay`), `NAME.task.json` (task file for the URScript / SO-101 generator, when the path picks and places).
 5. **Load...** a path, **Play in twin** (real arm holds still), **Run on robot** (asks first; real arm follows the twin,
-   capped at `--max-speed`, default 30 deg/s). **STOP** / Esc halts both.
+   capped at `--max-speed`, default 60 deg/s). **STOP** / Esc halts both.
 
 **Freedrive** (with `--port`): press **Freedrive** (or `f`) in the Teach panel, like the freedrive button on a UR.
 Hold the arm first: the arm motors switch off and it has no gravity hold. Move it by hand, the twin copies it,
@@ -331,9 +331,9 @@ Hold the arm first: the arm motors switch off and it has no gravity hold. Move i
 the twin's box jumps to that x, y so the twin matches your bench. Saved with the program and restored on load.
 
 **Soft grip** (real arm): closing goes slowly and stops when the jaws meet the part (the jaw lags the command, or the
-motor load passes `--grip-load`, default 350 of 1000). It then squeezes a little past the contact point and holds.
+motor load passes `--grip-load`, default 150 of 1000, measured on the real gripper 2026-11-28: empty close 84, sponge 180, box 200). It then squeezes a little past the contact point and holds.
 Find the right number first with the gripper-only test (from product\teach): `python -m retarget grip-test --port COM4`.
 The Jog card shows "part held at N %" and the load. Without a part it closes all the way. Same during Run on robot.
 
-Replay is MoveJ: all joints start and stop together, peak joint speed = the Speed box (default 20 deg/s). The gripper
+Replay is MoveJ: all joints start and stop together, peak joint speed = the Speed box (default 40 deg/s). The gripper
 moves only while the arm stands still. Undo removes the last step. `--plain` gives the old viewer without the panel.

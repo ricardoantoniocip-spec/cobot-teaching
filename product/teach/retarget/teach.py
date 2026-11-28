@@ -138,7 +138,7 @@ def _min_jerk(s: np.ndarray) -> np.ndarray:
 
 
 def to_trajectory(path: TeachPath, q_start: np.ndarray | None = None, gripper_start: float | None = None,
-                  max_speed_deg_s: float = 20.0, gripper_time_s: float = 1.0, dwell_s: float = 0.2,
+                  max_speed_deg_s: float = 20.0, gripper_time_s: float = 0.6, dwell_s: float = 0.2,
                   hz: float = 30.0, min_move_s: float = 0.5) -> JointTrajectory:
     """Play the path as MoveJ moves: all joints start and stop together, smooth (minimum jerk) speed profile,
     peak joint speed = max_speed_deg_s. Gripper steps open/close over gripper_time_s with the arm still.
