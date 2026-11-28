@@ -332,6 +332,7 @@ the twin's box jumps to that x, y so the twin matches your bench. Saved with the
 
 **Soft grip** (real arm): closing goes slowly and stops when the jaws meet the part (the jaw lags the command, or the
 motor load passes `--grip-load`, default 350 of 1000). It then squeezes a little past the contact point and holds.
+Find the right number first with the gripper-only test (from product\teach): `python -m retarget grip-test --port COM4`.
 The Jog card shows "part held at N %" and the load. Without a part it closes all the way. Same during Run on robot.
 
 Replay is MoveJ: all joints start and stop together, peak joint speed = the Speed box (default 20 deg/s). The gripper
