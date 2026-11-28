@@ -84,6 +84,23 @@ class TeachSession:
             q[i] = float(np.clip(value, self.chain.lower[i], self.chain.upper[i]))
         self.set_target(q, g)
 
+    def place_box(self, xy_m=None) -> None:
+        """Put the twin's box where the gripper tip is (x, y; it stands on the table), so the twin matches your bench."""
+        if xy_m is None:
+            q, _ = self.target()
+            xy_m = self.chain.fk(q)[:3, 3][:2]
+        x, y = (float(v) for v in xy_m)
+        yaw = np.arctan2(y, x)  # same as the scene: the box faces the robot
+        qp = self.data.joint("part").qpos
+        qp[:3] = (x, y, scene.PART_SIZE[2] / 2)
+        qp[3:7] = (np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2))
+        self.data.joint("part").qvel[:] = 0
+        import mujoco
+
+        mujoco.mj_forward(self.model, self.data)
+        self.path.box_mm = [x * 1000, y * 1000]
+        self.message = f"Box placed in the twin at x {x * 1000:.0f}, y {y * 1000:.0f} mm (saved with the program)."
+
     # --- teaching ---------------------------------------------------------------------------------------
     def toggle_teach(self) -> None:
         self.teaching = not self.teaching
@@ -129,7 +146,7 @@ class TeachSession:
         self.message = f"Going to step {i + 1}."
 
     def clear(self) -> None:
-        self.path = TeachPath(self.path.name)
+        self.path = TeachPath(self.path.name, box_mm=self.path.box_mm)
         self.message = "Path cleared."
 
     # --- files ------------------------------------------------------------------------------------------
@@ -153,6 +170,8 @@ class TeachSession:
 
     def load(self, file: Path) -> None:
         self.path = TeachPath.load(file)
+        if self.path.box_mm is not None:
+            self.place_box(np.asarray(self.path.box_mm) / 1000)
         self.message = f"Loaded {self.path.name}: {self.path.n_waypoints} waypoints, {len(self.path.steps)} steps."
 
     # --- replay -----------------------------------------------------------------------------------------
@@ -320,6 +339,8 @@ def handle_command(s: TeachSession, arm: RealArm | None, cmd: str, arg=None, pla
             if arm is not None:
                 arm.follow = False
             s.goto(int(arg))
+    elif cmd == "box":
+        s.place_box()
     elif cmd == "jog":
         if arm is None or not arm.freedrive:
             s.jog(*arg)

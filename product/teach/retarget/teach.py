@@ -62,6 +62,7 @@ class TeachPath:
     name: str = "path"
     steps: list[Step] = field(default_factory=list)
     note: str = ""
+    box_mm: list[float] | None = None  # where the box (part) stands, x, y in the robot base frame, taught with the arm
 
     # --- teaching -------------------------------------------------------------------------------------
     def add_waypoint(self, q_rad: np.ndarray, gripper_open: float, chain=None) -> Step:
@@ -92,6 +93,8 @@ class TeachPath:
         d = {"format": FORMAT, "name": self.name, "units": {"angle": "deg", "length": "mm"}}
         if self.note:
             d["note"] = self.note
+        if self.box_mm is not None:
+            d["box_mm"] = [round(float(v), 1) for v in self.box_mm]
         d["steps"] = [s.to_dict() for s in self.steps]
         return d
 
@@ -115,7 +118,7 @@ class TeachPath:
                 steps.append(Step("gripper", float(s["gripper"])))
             else:
                 raise ValueError(f"step {i}: unknown step {s['do']!r} (movej or gripper)")
-        return cls(d.get("name", "path"), steps, d.get("note", ""))
+        return cls(d.get("name", "path"), steps, d.get("note", ""), d.get("box_mm"))
 
     @classmethod
     def load(cls, path: Path) -> "TeachPath":

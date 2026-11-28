@@ -270,3 +270,23 @@ def test_jog(tmp_path):
     assert q[0] == pytest.approx(np.radians(30)) and g == pytest.approx(0.25)
     handle_command(s, None, "jog", (1, 99.0))  # clipped to the joint limit
     assert s.target()[0][1] == pytest.approx(s.chain.upper[1])
+
+
+def test_set_box_at_gripper(tmp_path):
+    from so101_sim.teach_panel import handle_command
+
+    s = session(tmp_path)
+    # gripper tip held just above the box (tool 60 mm up)
+    handle_command(s, None, "box")
+    tool = s.chain.fk(HOME)[:3, 3]
+    np.testing.assert_allclose(s.data.joint("part").qpos[:2], tool[:2], atol=1e-9)
+    for _ in range(200):  # it stands on the table and stays there
+        mujoco.mj_step(s.model, s.data)
+    assert s.data.joint("part").qpos[2] == pytest.approx(scene.PART_SIZE[2] / 2, abs=0.003)
+    # saved with the program and restored on load
+    handle_command(s, None, "teach")
+    s.record()
+    f = s.save("with_box")[0]
+    s2 = session(tmp_path)
+    s2.load(f)
+    np.testing.assert_allclose(s2.data.joint("part").qpos[:2], tool[:2], atol=1e-4)

@@ -266,6 +266,7 @@ def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float, e
     grip.columnconfigure((0, 1), weight=1)
     Btn(grip, "OPEN   o", lambda: cmds.put("open")).grid(row=0, column=0, sticky="ew", padx=(0, 4))
     Btn(grip, "CLOSE   c", lambda: cmds.put("close")).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+    Btn(c.body, "▣  SET BOX AT GRIPPER   b", lambda: cmds.put("box"), color=BTN, pady=7).pack(fill="x", pady=(8, 0))
 
     c = _card(left, "Jog")
     c.pack(fill="x")
@@ -417,10 +418,10 @@ def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float, e
     bar.pack(fill="x", side="bottom", padx=16, pady=(12, 14))
     status = tk.Label(bar, text="", bg=CARD, fg=TEXT, font=F_TXT, anchor="w", justify="left", wraplength=1200, padx=12, pady=8)
     status.pack(fill="x")
-    keys = "Keys:  w / Enter record   o open   c close   u undo   Esc stop" + ("   f freedrive   Space follow" if arm else "")
+    keys = "Keys:  w / Enter record   o open   c close   b box at gripper   u undo   Esc stop" + ("   f freedrive   Space follow" if arm else "")
     tk.Label(bar, text=keys, bg=CARD, fg=MUTED, font=(UI, 8), anchor="w", padx=12).pack(fill="x", pady=(0, 6))
 
-    for key, cmd in (("o", "open"), ("c", "close"), ("w", "record"), ("<Return>", "record"), ("u", "undo"), ("<space>", "follow")):
+    for key, cmd in (("o", "open"), ("c", "close"), ("w", "record"), ("<Return>", "record"), ("u", "undo"), ("b", "box"), ("<space>", "follow")):
         root.bind(key, lambda e, cm=cmd: None if isinstance(e.widget, (tk.Entry, ttk.Entry)) else cmds.put(cm))
     root.bind("<Escape>", lambda e: cmds.put("stop"))
 

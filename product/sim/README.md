@@ -327,6 +327,9 @@ green dots = taught waypoints, orange = gripper step there). `--viewer` also ope
 Hold the arm first: the arm motors switch off and it has no gravity hold. Move it by hand, the twin copies it,
 **Record waypoint** stores the pose, `o` / `c` still drive the gripper. Press Freedrive again: the arm holds where you left it.
 
+**Set box at gripper** (`b`): hold the gripper tip just above the real box (don't press on it) and press the button:
+the twin's box jumps to that x, y so the twin matches your bench. Saved with the program and restored on load.
+
 **Soft grip** (real arm): closing goes slowly and stops when the jaws meet the part (the jaw lags the command, or the
 motor load passes `--grip-load`, default 350 of 1000). It then squeezes a little past the contact point and holds.
 The Jog card shows "part held at N %" and the load. Without a part it closes all the way. Same during Run on robot.
