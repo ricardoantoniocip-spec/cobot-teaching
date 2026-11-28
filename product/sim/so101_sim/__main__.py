@@ -37,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--paths-dir", type=Path, default=Path("paths"), help="where Save and Load look (default: paths)")
     s.add_argument("--speed", type=float, default=20.0, help="replay speed in deg/s (peak joint speed), changeable in the panel")
     s.add_argument("--plain", action="store_true", help="only the 3D viewer, no Teach panel (twin only)")
+    s.add_argument("--viewer", action="store_true", help="also open MuJoCo's own 3D viewer window (old style)")
+    s.add_argument("--grip-load", type=float, default=350.0, help="gripper motor load (0-1000) that counts as 'part felt' when closing")
 
     s = sub.add_parser("path")
     s.add_argument("file", type=Path, help="a saved NAME.path.json")
@@ -122,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "view" and not a.plain:
         from .teach_panel import run
 
-        return run(a.port, a.robot_id, a.max_speed, a.path, a.paths_dir, a.speed)
+        return run(a.port, a.robot_id, a.max_speed, a.path, a.paths_dir, a.speed, viewer=a.viewer, grip_load=a.grip_load)
 
     if a.cmd == "path":
         from .teach_panel import export_path

@@ -312,8 +312,11 @@ python -m so101_sim view                  # twin only
 python -m so101_sim view --port COM4      # real arm follows the twin (SPACE = follow / pause)
 ```
 
+One window: the pendant with the 3D twin inside (drag = turn, right-drag = move, wheel = zoom, double-click = reset;
+green dots = taught waypoints, orange = gripper step there). `--viewer` also opens MuJoCo's own viewer.
+
 1. Press **TEACH** (turns green).
-2. Jog with the joint sliders in the 3D view's Control panel. **Record waypoint** (or `w` / Enter) stores the pose as a MoveJ.
+2. Jog with the sliders or the − / + buttons in the **Jog** card (hold + to keep moving). **Record waypoint** (or `w` / Enter) stores the pose as a MoveJ.
 3. `o` opens, `c` closes the gripper; in Teach mode that is a step in the path.
 4. Type a name, **Save**. Files in `paths\`: `NAME.path.json` (the path), `NAME.csv` (joint trajectory for
    `python -m retarget replay`), `NAME.task.json` (task file for the URScript / SO-101 generator, when the path picks and places).
@@ -323,6 +326,10 @@ python -m so101_sim view --port COM4      # real arm follows the twin (SPACE = f
 **Freedrive** (with `--port`): press **Freedrive** (or `f`) in the Teach panel, like the freedrive button on a UR.
 Hold the arm first: the arm motors switch off and it has no gravity hold. Move it by hand, the twin copies it,
 **Record waypoint** stores the pose, `o` / `c` still drive the gripper. Press Freedrive again: the arm holds where you left it.
+
+**Soft grip** (real arm): closing goes slowly and stops when the jaws meet the part (the jaw lags the command, or the
+motor load passes `--grip-load`, default 350 of 1000). It then squeezes a little past the contact point and holds.
+The Jog card shows "part held at N %" and the load. Without a part it closes all the way. Same during Run on robot.
 
 Replay is MoveJ: all joints start and stop together, peak joint speed = the Speed box (default 20 deg/s). The gripper
 moves only while the arm stands still. Undo removes the last step. `--plain` gives the old viewer without the panel.

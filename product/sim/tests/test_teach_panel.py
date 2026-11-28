@@ -93,6 +93,15 @@ class FakeBus:
     def __init__(self):
         self.torque = {j: True for j in (*scene.ARM_JOINTS, "gripper")}
         self.goals = {}
+        self.robot = None
+        self.load = 0.0
+
+    def read(self, name, motor):
+        if name == "Present_Position":
+            return self.robot.pos[f"{motor}.pos"]
+        if name == "Present_Load":
+            return self.load
+        raise KeyError(name)
 
     def disable_torque(self, motors):
         for m in motors:
@@ -105,6 +114,9 @@ class FakeBus:
     def sync_write(self, name, values):
         assert name == "Goal_Position"
         self.goals.update(values)
+        for m, v in values.items():
+            if self.torque[m]:
+                self.robot._set(f"{m}.pos", v)
 
 
 class FakeRobot:
@@ -112,8 +124,15 @@ class FakeRobot:
 
     def __init__(self, q_deg):
         self.bus = FakeBus()
+        self.bus.robot = self
         self.pos = {f"{j}.pos": float(v) for j, v in zip(scene.ARM_JOINTS, q_deg)} | {"gripper.pos": 40.0}
         self.sent = []
+        self.part_pct = None  # a part between the jaws stops the gripper here
+
+    def _set(self, k, v):
+        if k == "gripper.pos" and self.part_pct is not None:
+            v = max(v, self.part_pct)
+        self.pos[k] = v
 
     def get_observation(self):
         return dict(self.pos)
@@ -122,7 +141,7 @@ class FakeRobot:
         self.sent.append(dict(action))
         for k, v in action.items():
             if self.bus.torque[k.removesuffix(".pos")]:
-                self.pos[k] = v  # perfect servo
+                self._set(k, v)  # perfect servo, except where a part blocks the jaws
         return action
 
 
@@ -190,3 +209,64 @@ def test_goto_and_delete(tmp_path):
     assert not s.playing and "MoveJ" in s.message
     handle_command(s, None, "delete", 0)
     assert [st.do for st in s.path.steps] == ["movej", "gripper"]
+
+
+def test_soft_grip_stops_at_the_part(tmp_path):
+    from retarget.robot import JointMapping
+    from so101_sim.teach_panel import RealArm, handle_command
+
+    s = session(tmp_path)
+    robot = FakeRobot(np.degrees(HOME))
+    m = JointMapping()  # gripper 5 % closed .. 40 % open
+    arm = RealArm(robot, m, np.radians(30) / 30)
+    for _ in range(5):
+        arm.step(s)
+    robot.part_pct = 20.0  # part between the jaws at 20 % = (20-5)/35 = 0.43 open
+    handle_command(s, arm, "close")
+    for _ in range(90):
+        arm.step(s)
+    assert arm.gripped_at == pytest.approx(15 / 35, abs=0.02)
+    assert arm.g_cmd == pytest.approx(arm.gripped_at - arm.grip_squeeze, abs=1e-6)  # squeezes a little, not to fully closed
+    assert "gripped" in s.message
+    sent_g = robot.sent[-1]["gripper.pos"]
+    assert 5.0 < sent_g < 20.0
+
+    handle_command(s, arm, "open")
+    for _ in range(40):
+        arm.step(s)
+    assert arm.gripped_at is None and robot.pos["gripper.pos"] == pytest.approx(40.0)
+
+    # no part: closes all the way
+    robot.part_pct = None
+    handle_command(s, arm, "close")
+    for _ in range(90):
+        arm.step(s)
+    assert arm.gripped_at is None and robot.pos["gripper.pos"] == pytest.approx(5.0)
+
+
+def test_soft_grip_by_motor_load(tmp_path):
+    from retarget.robot import JointMapping
+    from so101_sim.teach_panel import RealArm, handle_command
+
+    s = session(tmp_path)
+    robot = FakeRobot(np.degrees(HOME))
+    arm = RealArm(robot, JointMapping(), np.radians(30) / 30)
+    arm.step(s)
+    handle_command(s, arm, "close")
+    for _ in range(10):
+        arm.step(s)
+    robot.bus.load = 500  # soft part: no lag yet, but the motor works hard
+    arm.step(s)
+    assert arm.gripped_at is not None
+
+
+def test_jog(tmp_path):
+    from so101_sim.teach_panel import handle_command
+
+    s = session(tmp_path)
+    handle_command(s, None, "jog", (0, np.radians(30)))
+    handle_command(s, None, "jog", (5, 0.25))
+    q, g = s.target()
+    assert q[0] == pytest.approx(np.radians(30)) and g == pytest.approx(0.25)
+    handle_command(s, None, "jog", (1, 99.0))  # clipped to the joint limit
+    assert s.target()[0][1] == pytest.approx(s.chain.upper[1])

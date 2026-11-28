@@ -80,7 +80,105 @@ def _card(master, title: str) -> tk.Frame:
     return outer
 
 
-def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float):
+class RepeatBtn(Btn):
+    """Jog button: one step on click, keeps stepping while held."""
+
+    def __init__(self, master, text, command, **kw):
+        super().__init__(master, text, command, **kw)
+        self.unbind("<Button-1>")
+        self._job = None
+        self.bind("<ButtonPress-1>", self._press)
+        self.bind("<ButtonRelease-1>", self._release)
+
+    def _press(self, _=None, first=True):
+        if not self.enabled:
+            return
+        self.command()
+        self._job = self.after(350 if first else 50, lambda: self._press(first=False))
+
+    def _release(self, _=None):
+        if self._job:
+            self.after_cancel(self._job)
+            self._job = None
+
+
+class TwinView(tk.Label):
+    """The MuJoCo twin drawn inside the pendant. Drag = turn, right-drag = move, wheel = zoom.
+    Taught waypoints are drawn as dots joined by a line (orange = the gripper closes or opens there)."""
+
+    def __init__(self, master, model, data, s, width: int = 600, height: int = 420):
+        import mujoco
+
+        super().__init__(master, bg="#0b0d10", cursor="fleur", bd=0)
+        self.mj, self.model, self.data, self.s = mujoco, model, data, s
+        model.vis.global_.offwidth = max(int(model.vis.global_.offwidth), width)
+        model.vis.global_.offheight = max(int(model.vis.global_.offheight), height)
+        self.renderer = mujoco.Renderer(model, height, width)
+        self.cam = mujoco.MjvCamera()
+        self.home_view()
+        self.img = tk.PhotoImage(width=width, height=height)
+        self.config(image=self.img)
+        self._last = None
+        self.bind("<ButtonPress-1>", self._start)
+        self.bind("<ButtonPress-3>", self._start)
+        self.bind("<B1-Motion>", lambda e: self._drag(e, mujoco.mjtMouse.mjMOUSE_ROTATE_V))
+        self.bind("<B3-Motion>", lambda e: self._drag(e, mujoco.mjtMouse.mjMOUSE_MOVE_V))
+        self.bind("<MouseWheel>", lambda e: self._zoom(-e.delta / 120))
+        self.bind("<Button-4>", lambda e: self._zoom(-1))
+        self.bind("<Button-5>", lambda e: self._zoom(1))
+        self.bind("<Double-Button-1>", lambda e: self.home_view())
+
+    def home_view(self) -> None:
+        self.cam.type = self.mj.mjtCamera.mjCAMERA_FREE
+        self.cam.lookat[:] = (0.17, 0.0, 0.08)
+        self.cam.distance, self.cam.azimuth, self.cam.elevation = 0.62, 150.0, -34.0
+
+    def _start(self, e) -> None:
+        self._last = (e.x, e.y)
+
+    def _drag(self, e, action) -> None:
+        if self._last is None:
+            self._last = (e.x, e.y)
+        dx, dy = e.x - self._last[0], e.y - self._last[1]
+        self._last = (e.x, e.y)
+        h = self.renderer.height
+        self.mj.mjv_moveCamera(self.model, action, dx / h, dy / h, self.renderer.scene, self.cam)
+
+    def _zoom(self, steps: float) -> None:
+        self.mj.mjv_moveCamera(self.model, self.mj.mjtMouse.mjMOUSE_ZOOM, 0, 0.05 * steps, self.renderer.scene, self.cam)
+
+    def _add(self, scn, kind, size, pos, rgba, to=None, width=0.0) -> None:
+        if scn.ngeom >= scn.maxgeom:
+            return
+        g = scn.geoms[scn.ngeom]
+        if to is None:
+            self.mj.mjv_initGeom(g, kind, np.asarray(size, float), np.asarray(pos, float), np.eye(3).flatten(), np.asarray(rgba, np.float32))
+        else:
+            self.mj.mjv_initGeom(g, kind, np.zeros(3), np.zeros(3), np.eye(3).flatten(), np.asarray(rgba, np.float32))
+            self.mj.mjv_connector(g, kind, width, np.asarray(pos, float), np.asarray(to, float))
+        scn.ngeom += 1
+
+    def draw(self) -> None:
+        r = self.renderer
+        r.update_scene(self.data, camera=self.cam)
+        scn = r.scene
+        pts, grip_pts = [], set()
+        for st_ in self.s.path.steps:
+            if st_.do == "movej" and st_.tool_mm is not None:
+                pts.append(np.asarray(st_.tool_mm) / 1000)
+            elif st_.do == "gripper" and pts:
+                grip_pts.add(len(pts) - 1)
+        for a, b in zip(pts, pts[1:]):
+            self._add(scn, self.mj.mjtGeom.mjGEOM_CAPSULE, None, a, (0.18, 0.55, 1.0, 0.55), to=b, width=0.0018)
+        for i, p_ in enumerate(pts):
+            col = (1.0, 0.6, 0.12, 1) if i in grip_pts else (0.13, 0.71, 0.45, 1)
+            self._add(scn, self.mj.mjtGeom.mjGEOM_SPHERE, (0.007, 0, 0), p_, col)
+        px = r.render()
+        h, w = px.shape[:2]
+        self.img.configure(data=b"P6 %d %d 255\n" % (w, h) + px.tobytes(), format="PPM")
+
+
+def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float, embed_view: bool = True):
     try:
         root = tk.Tk()
     except tk.TclError:
@@ -88,8 +186,7 @@ def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float):
     root.title("Robotonic  |  SO-101 Teach Pendant")
     root.configure(bg=BG)
     root.attributes("-topmost", True)
-    root.minsize(900, 680)
-    root.geometry("1000x720")
+    root.minsize(1100, 700)
 
     st = ttk.Style(root)
     st.theme_use("clam")
@@ -122,12 +219,23 @@ def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float):
 
     body = tk.Frame(root, bg=BG)
     body.pack(fill="both", expand=True, padx=16)
-    body.columnconfigure(1, weight=1)
+    body.columnconfigure(2, weight=1)
     body.rowconfigure(0, weight=1)
-    left = tk.Frame(body, bg=BG, width=270)
+    left = tk.Frame(body, bg=BG, width=290)
     left.grid(row=0, column=0, sticky="nsw", padx=(0, 12))
+    center = tk.Frame(body, bg=BG)
+    center.grid(row=0, column=1, sticky="nsew", padx=(0, 12))
     right = tk.Frame(body, bg=BG)
-    right.grid(row=0, column=1, sticky="nsew")
+    right.grid(row=0, column=2, sticky="nsew")
+
+    view = None
+    if embed_view:
+        c = _card(center, "3D twin   ·   drag turn   ·   right-drag move   ·   wheel zoom   ·   double-click reset")
+        c.pack(fill="x", pady=(0, 12))
+        sw = root.winfo_screenwidth()
+        vw = int(np.clip(sw - 1000, 420, 640))
+        view = TwinView(c.body, s.model, s.data, s, vw, int(vw * 0.68))
+        view.pack()
 
     # --- left: mode + teach ----------------------------------------------------------------------------
     c = _card(left, "Mode")
@@ -159,30 +267,51 @@ def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float):
     Btn(grip, "OPEN   o", lambda: cmds.put("open")).grid(row=0, column=0, sticky="ew", padx=(0, 4))
     Btn(grip, "CLOSE   c", lambda: cmds.put("close")).grid(row=0, column=1, sticky="ew", padx=(4, 0))
 
-    c = _card(left, "Position")
+    c = _card(left, "Jog")
     c.pack(fill="x")
     lo, hi = np.degrees(s.chain.lower), np.degrees(s.chain.upper)
-    joint_rows = []
-    for i, nm in enumerate(JOINT_NAMES):
+    joint_rows = []  # (DoubleVar, value label, is_dragging dict)
+
+    def jog_row(label: str, i: int, a: float, b: float, step: float, unit: str):
         r = tk.Frame(c.body, bg=CARD)
         r.pack(fill="x", pady=2)
-        tk.Label(r, text=nm, bg=CARD, fg=MUTED, font=F_TXT, width=10, anchor="w").pack(side="left")
-        bar = tk.Canvas(r, width=110, height=6, bg=BTN, highlightthickness=0)
-        bar.pack(side="left", padx=6)
-        fill = bar.create_rectangle(0, 0, 0, 6, fill=ACCENT, width=0)
-        val = tk.Label(r, text="0.0°", bg=CARD, fg=TEXT, font=F_MONO, width=7, anchor="e")
+        tk.Label(r, text=label, bg=CARD, fg=MUTED, font=F_TXT, width=9, anchor="w").pack(side="left")
+        var = tk.DoubleVar(value=0.0)
+        drag = {"on": False}
+        to_cmd = (lambda v: np.radians(v)) if i < 5 else (lambda v: v / 100.0)
+
+        def send(v=None):
+            cmds.put(("jog", (i, to_cmd(float(var.get())))))
+
+        def nudge(d):
+            var.set(float(np.clip(var.get() + d, a, b)))
+            send()
+
+        RepeatBtn(r, "−", lambda: nudge(-step), pady=1, font=(UI, 10, "bold")).pack(side="left")
+        sc = ttk.Scale(r, from_=a, to=b, variable=var, style="P.Horizontal.TScale", length=110, command=send)
+        sc.pack(side="left", padx=4)
+        sc.bind("<ButtonPress-1>", lambda e: drag.update(on=True))
+        sc.bind("<ButtonRelease-1>", lambda e: drag.update(on=False))
+        RepeatBtn(r, "+", lambda: nudge(step), pady=1, font=(UI, 10, "bold")).pack(side="left")
+        val = tk.Label(r, text="", bg=CARD, fg=TEXT, font=F_MONO, width=6, anchor="e")
         val.pack(side="right")
-        joint_rows.append((bar, fill, val))
+        joint_rows.append((var, val, drag, unit))
+
+    for i, nm in enumerate(JOINT_NAMES):
+        jog_row(nm, i, float(lo[i]), float(hi[i]), 1.0, "°")
+    jog_row("Gripper", 5, 0.0, 100.0, 5.0, "%")
     r = tk.Frame(c.body, bg=CARD)
     r.pack(fill="x", pady=(6, 0))
-    tk.Label(r, text="Gripper", bg=CARD, fg=MUTED, font=F_TXT, width=10, anchor="w").pack(side="left")
-    grip_val = tk.Label(r, text="", bg=CARD, fg=TEXT, font=F_MONO, anchor="e")
-    grip_val.pack(side="right")
-    r = tk.Frame(c.body, bg=CARD)
-    r.pack(fill="x", pady=(2, 0))
-    tk.Label(r, text="Tool mm", bg=CARD, fg=MUTED, font=F_TXT, width=10, anchor="w").pack(side="left")
+    tk.Label(r, text="Tool mm", bg=CARD, fg=MUTED, font=F_TXT, width=9, anchor="w").pack(side="left")
     tool_val = tk.Label(r, text="", bg=CARD, fg=TEXT, font=F_MONO, anchor="e")
     tool_val.pack(side="right")
+    grip_val = None
+    if arm is not None:
+        r = tk.Frame(c.body, bg=CARD)
+        r.pack(fill="x", pady=(2, 0))
+        tk.Label(r, text="Grip", bg=CARD, fg=MUTED, font=F_TXT, width=9, anchor="w").pack(side="left")
+        grip_val = tk.Label(r, text="", bg=CARD, fg=TEXT, font=F_MONO, anchor="e")
+        grip_val.pack(side="right")
 
     # --- right: program -------------------------------------------------------------------------------
     c = _card(right, "Program")
@@ -207,8 +336,8 @@ def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float):
     tv_frame = tk.Frame(c.body, bg=CARD)
     tv_frame.pack(fill="both", expand=True)
     tree = ttk.Treeview(tv_frame, style="P.Treeview", columns=("n", "cmd", "detail", "tool"), show="headings", selectmode="browse")
-    for col, txt, w, anchor in (("n", "#", 36, "center"), ("cmd", "COMMAND", 90, "w"), ("detail", "JOINTS  base → wrist roll", 300, "w"),
-                                 ("tool", "TOOL x, y, z mm", 130, "w")):
+    for col, txt, w, anchor in (("n", "#", 36, "center"), ("cmd", "COMMAND", 80, "w"), ("detail", "JOINTS  base → wrist roll", 250, "w"),
+                                 ("tool", "TOOL mm", 110, "w")):
         tree.heading(col, text=txt, anchor=anchor)
         tree.column(col, width=w, minwidth=w, anchor=anchor, stretch=col == "detail")
     tree.tag_configure("odd", background="#21262e")
@@ -242,7 +371,7 @@ def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float):
         and cmds.put("clear")).pack(side="right")
 
     # --- right: run -----------------------------------------------------------------------------------
-    c = _card(right, "Run")
+    c = _card(center, "Run")
     c.pack(fill="x")
     sp = tk.Frame(c.body, bg=CARD)
     sp.pack(fill="x")
@@ -286,7 +415,7 @@ def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float):
     # --- status bar -----------------------------------------------------------------------------------
     bar = tk.Frame(root, bg=CARD, highlightbackground=LINE, highlightthickness=1)
     bar.pack(fill="x", side="bottom", padx=16, pady=(12, 14))
-    status = tk.Label(bar, text="", bg=CARD, fg=TEXT, font=F_TXT, anchor="w", justify="left", wraplength=720, padx=12, pady=8)
+    status = tk.Label(bar, text="", bg=CARD, fg=TEXT, font=F_TXT, anchor="w", justify="left", wraplength=1200, padx=12, pady=8)
     status.pack(fill="x")
     keys = "Keys:  w / Enter record   o open   c close   u undo   Esc stop" + ("   f freedrive   Space follow" if arm else "")
     tk.Label(bar, text=keys, bg=CARD, fg=MUTED, font=(UI, 8), anchor="w", padx=12).pack(fill="x", pady=(0, 6))
@@ -352,17 +481,27 @@ def make_panel(s, cmds: queue.Queue, arm, play_speed: float, max_speed: float):
             name.set(s.path.name)
             shown["name"] = s.path.name
 
-        # live position
+        # live position + jog sliders
         q, g = s.target()
-        if shown["q"] is None or np.abs(q - shown["q"]).max() > 1e-3 or shown.get("g") != round(g, 2):
-            qd = np.degrees(q)
-            for (bar_, fill, val), v, a, b in zip(joint_rows, qd, lo, hi):
-                val.config(text=f"{v:6.1f}°")
-                bar_.coords(fill, 0, 0, 110 * float(np.clip((v - a) / (b - a), 0, 1)), 6)
-            grip_val.config(text=f"{g * 100:3.0f} % open")
+        vals = list(np.degrees(q)) + [g * 100]
+        for (var, val, drag, unit), v in zip(joint_rows, vals):
+            if not drag["on"] and abs(var.get() - v) > 0.05:
+                var.set(v)
+            txt = f"{v:5.1f}{unit}" if unit == "°" else f"{v:4.0f} %"
+            if val.cget("text") != txt:
+                val.config(text=txt)
+        if shown["q"] is None or np.abs(q - shown["q"]).max() > 1e-4:
             tool = s.chain.fk(q)[:3, 3] * 1000
             tool_val.config(text=f"{tool[0]:4.0f} {tool[1]:4.0f} {tool[2]:4.0f}")
-            shown["q"], shown["g"] = q.copy(), round(g, 2)
+            shown["q"] = q.copy()
+        if grip_val is not None:
+            txt = (f"part held at {arm.gripped_at * 100:.0f} %" if arm.gripped_at is not None else "no part") + f"   load {arm.last_load:.0f}"
+            if grip_val.cget("text") != txt:
+                grip_val.config(text=txt, fg=GREEN if arm.gripped_at is not None else MUTED)
+        if view is not None:
+            shown["frame"] = shown.get("frame", 0) + 1
+            if shown["frame"] % 2 == 0:  # 15 frames a second is plenty
+                view.draw()
 
         if status.cget("text") != s.message:
             status.config(text=s.message)
